@@ -1,47 +1,44 @@
 import pandas as pd
 import numpy as np
 import os
-# import yfinance as yf # İnternet erişimi varsa aktif edilebilir
 
 class DataLoader:
     """
-    CSV dosyasından veya yfinance üzerinden veri çeker.
+    Sadece yerel CSV dosyasından veri okur ve finansal analiz için hazırlar.
     """
-    def __init__(self, file_path=None, ticker=None):
+    def __init__(self, file_path):
         self.file_path = file_path
-        self.ticker = ticker
 
     def load_data(self):
-        # 1. Öncelik: CSV Dosyası
-        if self.file_path and os.path.exists(self.file_path):
-            print(f"[INFO] Veri CSV'den yükleniyor: {self.file_path}")
-            df = pd.read_csv(self.file_path)
-            df["Tarih"] = pd.to_datetime(df["Tarih"], dayfirst=True)
-            df.set_index("Tarih", inplace=True)
-        
-        # 2. Öncelik: yfinance (Eğer CSV yoksa ve ticker verildiyse)
-        # elif self.ticker:
-        #     print(f"[INFO] {self.ticker} için Yahoo Finance verisi çekiliyor...")
-        #     df = yf.download(self.ticker, period="5y", interval="1d")
-        #     df.reset_index(inplace=True)
-        #     df.rename(columns={"Date": "Tarih", "Close": "Kapanış", "Open": "Açılış", "High": "Yüksek", "Low": "Düşük", "Volume": "Hacim"}, inplace=True)
-        #     df.set_index("Tarih", inplace=True)
-        
-        else:
-            raise FileNotFoundError("Veri kaynağı bulunamadı (CSV yolu veya Ticker girilmeli).")
+        if not os.path.exists(self.file_path):
+            raise FileNotFoundError(f"[HATA] '{self.file_path}' dosyası bulunamadı!")
 
-        # Veri Temizleme ve Hazırlık
-        df = df.asfreq("B")
+        print(f"[INFO] Veri CSV dosyasından yükleniyor: {self.file_path}")
         
+        # CSV Okuma
+        df = pd.read_csv(self.file_path)
+        
+        # Tarih Formatı Düzeltme (DD/MM/YYYY veya YYYY-MM-DD)
+        try:
+            df["Tarih"] = pd.to_datetime(df["Tarih"], dayfirst=True)
+        except Exception as e:
+            print(f"[UYARI] Tarih formatı algılanamadı, standart format deneniyor: {e}")
+            df["Tarih"] = pd.to_datetime(df["Tarih"])
+            
+        df.set_index("Tarih", inplace=True)
+        
+        # Sütun isim kontrolü
         if "Kapanış" not in df.columns and "Close" in df.columns:
             df["Kapanış"] = df["Close"]
             
-        df["Kapanış"] = df["Kapanış"].interpolate()
+        # Veri Hazırlığı
+        df = df.asfreq("B") # İş günleri
+        df["Kapanış"] = df["Kapanış"].interpolate() # Eksik verileri doldur
         
         # Logaritmik Getiri
         df["log_close"] = np.log(df["Kapanış"])
         df["log_return"] = df["log_close"].diff() * 100 
         df.dropna(inplace=True)
         
-        print(f"[INFO] Veri hazır. Son Tarih: {df.index[-1].strftime('%Y-%m-%d')}")
+        print(f"[BAŞARILI] Veri Hazır. {df.index[0].date()} - {df.index[-1].date()} (Toplam {len(df)} gün)")
         return df

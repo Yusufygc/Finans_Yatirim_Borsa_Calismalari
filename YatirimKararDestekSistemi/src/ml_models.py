@@ -2,7 +2,6 @@ import numpy as np
 import pandas as pd
 from sklearn.svm import SVR
 from sklearn.ensemble import RandomForestRegressor
-# XGBoost importu kaldırıldı
 from lightgbm import LGBMRegressor
 from sklearn.preprocessing import StandardScaler
 import warnings
@@ -11,15 +10,14 @@ warnings.filterwarnings('ignore')
 
 class MLEngine:
     """
-    SVR, Random Forest ve LightGBM kullanarak fiyat tahmini yapar.
+    SVR, Random Forest ve LightGBM modellerini çalıştırır.
     """
-    def __init__(self, df, n_future=30, lags=5):
+    def __init__(self, df, n_future=10, lags=5):
         self.df = df.copy()
         self.n_future = n_future
         self.lags = lags 
         self.scalers = {} 
         
-        # XGBoost çıkarıldı, sadece 3 model kaldı
         self.models = {
             "SVR": SVR(kernel='rbf', C=100, gamma=0.1, epsilon=.1),
             "RandomForest": RandomForestRegressor(n_estimators=100, random_state=42),
@@ -27,9 +25,6 @@ class MLEngine:
         }
 
     def prepare_data(self):
-        """
-        Veriyi Gecikmeli (Lag) özelliklerle zenginleştirir.
-        """
         data = self.df[["Kapanış"]].copy()
         for lag in range(1, self.lags + 1):
             data[f"Lag_{lag}"] = data["Kapanış"].shift(lag)   
@@ -37,9 +32,6 @@ class MLEngine:
         return data
 
     def predict_recursive(self, model_name, model, train_data, last_known_data):
-        """
-        Geleceği yinelemeli (recursive) olarak tahmin eder.
-        """
         X = train_data.drop(columns=["Kapanış"]).values
         y = train_data["Kapanış"].values
         
@@ -64,7 +56,6 @@ class MLEngine:
                 pred = model.predict(current_lags).item()
             
             predictions.append(pred)
-            
             new_lags = np.roll(current_lags, 1)
             new_lags[0, 0] = pred 
             current_lags = new_lags
@@ -72,14 +63,11 @@ class MLEngine:
         return predictions
 
     def run_all_models(self):
-        print("[INFO] ML Modelleri (SVM, RF, LightGBM) eğitiliyor...")
         prepared_data = self.prepare_data()
-        
         last_closes = self.df["Kapanış"].iloc[-self.lags:].values
         current_lags_input = last_closes[::-1] 
         
         results = {}
-        
         for name, model in self.models.items():
             preds = self.predict_recursive(name, model, prepared_data, pd.Series(current_lags_input))
             results[f"Tahmin_{name}"] = preds

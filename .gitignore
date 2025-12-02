@@ -54,7 +54,7 @@ Veri Klasörleri (Eğer klasör yapısı kullanıyorsanız)
 data/
 data/raw/
 data/processed/
-
+src/*.csv
 Oluşturulan Grafikler ve Görseller
 
 *.png
