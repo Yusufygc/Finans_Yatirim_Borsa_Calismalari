@@ -9,14 +9,12 @@ import warnings
 warnings.filterwarnings('ignore')
 
 class MLEngine:
-    """
-    SVR, Random Forest ve LightGBM modellerini çalıştırır.
-    """
     def __init__(self, df, n_future=10, lags=5):
         self.df = df.copy()
         self.n_future = n_future
         self.lags = lags 
         self.scalers = {} 
+        self.trained_models = {} # Eğitilmiş modelleri burada saklayacağız
         
         self.models = {
             "SVR": SVR(kernel='rbf', C=100, gamma=0.1, epsilon=.1),
@@ -35,6 +33,7 @@ class MLEngine:
         X = train_data.drop(columns=["Kapanış"]).values
         y = train_data["Kapanış"].values
         
+        # SVR için ölçekleme
         if model_name == "SVR":
             scaler_X = StandardScaler()
             scaler_y = StandardScaler()
@@ -42,8 +41,13 @@ class MLEngine:
             y = scaler_y.fit_transform(y.reshape(-1, 1)).ravel()
             self.scalers[model_name] = (scaler_X, scaler_y)
             
+        # Modeli eğit
         model.fit(X, y)
         
+        # Eğitilmiş modeli hafızaya al (Kaydetmek için)
+        self.trained_models[model_name] = model
+        
+        # Tahmin döngüsü
         predictions = []
         current_lags = last_known_data.values.reshape(1, -1) 
         
@@ -63,6 +67,7 @@ class MLEngine:
         return predictions
 
     def run_all_models(self):
+        print("   -> ML Modelleri eğitiliyor (SVR, RF, LightGBM)...")
         prepared_data = self.prepare_data()
         last_closes = self.df["Kapanış"].iloc[-self.lags:].values
         current_lags_input = last_closes[::-1] 

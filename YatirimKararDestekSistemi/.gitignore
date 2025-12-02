@@ -1,5 +1,5 @@
 --- Python Standartları ---
-
+src/__pycache__/
 pycache/
 *.py[cod]
 *$py.class
@@ -54,7 +54,7 @@ Veri Klasörleri (Eğer klasör yapısı kullanıyorsanız)
 data/
 data/raw/
 data/processed/
-
+src/*.csv
 Oluşturulan Grafikler ve Görseller
 
 *.png

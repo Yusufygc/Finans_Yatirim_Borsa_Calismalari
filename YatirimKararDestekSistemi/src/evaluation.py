@@ -12,23 +12,21 @@ class ModelEvaluator:
         
     def evaluate(self):
         print(f"\n{'='*60}")
-        print(f"   BACKTEST RAPORU (Son {self.test_days} Günlük Sınav)")
+        print(f"   BACKTEST RAPORU (Son {self.test_days} Günlük Performans)")
         print(f"{'='*60}")
-        print(f"[TEST] Eğitim Bitiş: {self.train_df.index[-1].date()}")
-        print(f"[TEST] Test Aralığı: {self.test_df.index[0].date()} - {self.test_df.index[-1].date()}")
+        print(f"[TEST] Eğitim Verisi: ... - {self.train_df.index[-1].date()}")
+        print(f"[TEST] Test Verisi  : {self.test_df.index[0].date()} - {self.test_df.index[-1].date()}")
 
+        # Backtest sırasında model kaydetmeye gerek yok (save_models=False)
         model = HybridModel(n_future=self.test_days)
-        results = model.run_hybrid_forecast(self.train_df)
+        results = model.run_hybrid_forecast(self.train_df, save_models=False)
         
-        # Gerçek vs Tahmin
         actual = self.test_df["Kapanış"]
         predicted = results["Final_Ensemble"]
         
-        # Metrikler
         rmse = np.sqrt(mean_squared_error(actual, predicted))
         mape = mean_absolute_percentage_error(actual, predicted) * 100
         
-        # Yön Doğruluğu
         actual_diff = np.diff(actual)
         pred_diff = np.diff(predicted)
         acc = np.mean(np.sign(actual_diff) == np.sign(pred_diff)) * 100

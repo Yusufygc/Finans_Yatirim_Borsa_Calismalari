@@ -6,3 +6,5 @@ arch
 pandas_ta
 pmdarima
 scikit-learn
+lightgbm
+joblib

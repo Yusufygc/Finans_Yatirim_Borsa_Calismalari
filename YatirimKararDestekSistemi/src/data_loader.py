@@ -4,7 +4,7 @@ import os
 
 class DataLoader:
     """
-    Sadece yerel CSV dosyasından veri okur ve finansal analiz için hazırlar.
+    Sadece yerel CSV dosyasından veri okur.
     """
     def __init__(self, file_path):
         self.file_path = file_path
@@ -15,30 +15,28 @@ class DataLoader:
 
         print(f"[INFO] Veri CSV dosyasından yükleniyor: {self.file_path}")
         
-        # CSV Okuma
         df = pd.read_csv(self.file_path)
         
-        # Tarih Formatı Düzeltme (DD/MM/YYYY veya YYYY-MM-DD)
+        # Tarih formatı algılama
         try:
             df["Tarih"] = pd.to_datetime(df["Tarih"], dayfirst=True)
-        except Exception as e:
-            print(f"[UYARI] Tarih formatı algılanamadı, standart format deneniyor: {e}")
+        except:
             df["Tarih"] = pd.to_datetime(df["Tarih"])
             
         df.set_index("Tarih", inplace=True)
         
-        # Sütun isim kontrolü
+        # Sütun ismi standardizasyonu
         if "Kapanış" not in df.columns and "Close" in df.columns:
             df["Kapanış"] = df["Close"]
             
-        # Veri Hazırlığı
+        # Veri temizleme
         df = df.asfreq("B") # İş günleri
-        df["Kapanış"] = df["Kapanış"].interpolate() # Eksik verileri doldur
+        df["Kapanış"] = df["Kapanış"].interpolate()
         
-        # Logaritmik Getiri
+        # Logaritmik getiri
         df["log_close"] = np.log(df["Kapanış"])
         df["log_return"] = df["log_close"].diff() * 100 
         df.dropna(inplace=True)
         
-        print(f"[BAŞARILI] Veri Hazır. {df.index[0].date()} - {df.index[-1].date()} (Toplam {len(df)} gün)")
+        print(f"[BAŞARILI] Veri Hazır: {df.index[0].date()} - {df.index[-1].date()} (Toplam {len(df)} gün)")
         return df

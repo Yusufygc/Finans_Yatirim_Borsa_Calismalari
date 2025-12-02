@@ -1,5 +1,6 @@
 
 import pandas as pd
+import os
 from data_loader import DataLoader
 from feature_engineering import FeatureEngineer
 from model_price_prediction import HybridModel
@@ -8,18 +9,21 @@ from evaluation import ModelEvaluator
 # ==========================================
 # AYARLAR
 # ==========================================
-DATA_FILE = "D:\\1KodCalismalari\\Projeler\\Finans_Yatirim_Borsa_Calismalari\\YatirimKararDestekSistemi\\data\\raw\\ASELS.csv"  # Dosya yolunu kendinize göre düzenleyin  
+DATA_FILE = "D:\\1KodCalismalari\\Projeler\\Finans_Yatirim_Borsa_Calismalari\\YatirimKararDestekSistemi\\data\\raw\\ALTNY.csv"  # Dosya yolunu kendinize göre düzenleyin  
 FORECAST_DAYS = 10  # Gelecek kaç gün tahmin edilsin?
 
 def main():
-    # Konsol ayarları (Tabloların düzgün görünmesi için)
+    # Konsol Ayarları (Kompakt Görünüm İçin)
     pd.set_option('display.max_columns', None)
-    pd.set_option('display.width', 1000)
-    pd.set_option('display.float_format', '{:,.2f}'.format)
+    pd.set_option('display.width', 200) # Konsol genişliği
+    pd.set_option('display.max_colwidth', 25) # Uzun metinleri (Gerekçe) kırp
+    pd.set_option('display.float_format', '{:,.2f}'.format) # Virgülden sonra 2 hane
 
     print("############################################################")
-    print("#          YATIRIM KARAR DESTEK SİSTEMİ (FULL RAPOR)       #")
+    print("#          YATIRIM KARAR DESTEK SİSTEMİ (EĞİTİM & KAYIT)   #")
     print("############################################################")
+
+    ticker_name = os.path.splitext(os.path.basename(DATA_FILE))[0]
 
     # 1. VERİ YÜKLEME
     try:
@@ -34,23 +38,21 @@ def main():
     df = fe.add_indicators()
     current_price = df["Kapanış"].iloc[-1]
     
-    # 3. BACKTEST (DEĞERLENDİRME) AŞAMASI
+    # 3. BACKTEST
     evaluator = ModelEvaluator(df, test_days=30)
     evaluator.evaluate()
 
-    # 4. GELECEK TAHMİNİ (FORECAST)
-    print(f"\n>>> GELECEK {FORECAST_DAYS} GÜN İÇİN DETAYLI MODEL TAHMİNLERİ <<<")
+    # 4. FİNAL EĞİTİM VE TAHMİN
+    print(f"\n>>> GELECEK {FORECAST_DAYS} GÜN İÇİN TAHMİN (Hisse: {ticker_name}) <<<")
     
     model_engine = HybridModel(n_future=FORECAST_DAYS)
-    forecast_results = model_engine.run_hybrid_forecast(df)
+    # save_models=True ile modelleri ana dizindeki 'models/' klasörüne kaydediyoruz
+    forecast_results = model_engine.run_hybrid_forecast(df, save_models=True, ticker=ticker_name)
 
-    # 5. RİSK VE SİNYAL ÜRETİMİ
-    # Tahmin ortalaması olarak Final Ensemble'ı kullan
+    # 5. SİNYAL ÜRETİMİ
     forecast_results["Tahmin_Ortalama"] = forecast_results["Final_Ensemble"]
+    advisor = RiskManager(risk_profile="agresif")  # Profil: agresif, orta, temkinli
     
-    advisor = RiskManager(risk_profile="orta")
-    
-    # Sinyal motoruna güncel indikatörleri ver
     final_table = advisor.generate_signals(
         forecast_results, 
         current_price, 
@@ -58,25 +60,40 @@ def main():
         current_sma=df["SMA_50"].iloc[-1]
     )
 
-    # 6. BÜYÜK TABLOYU YAZDIR
-    print("\n[DETAYLI SONUÇ TABLOSU]")
+    # 6. RAPORLAMA (Kompakt Tablo Düzeni)
+    print("\n[ÖZET TAHMİN TABLOSU]")
     print("-" * 120)
     
-    # Gösterilecek sütunlar (Tüm modelleri istediniz)
+    # Gösterilecek orijinal sütunlar
     cols = [
-        "Tahmin_ARIMA", "Tahmin_Prophet", "TS_Ensemble",      # Zaman Serisi Grubu
-        "Tahmin_SVR", "Tahmin_RandomForest", "Tahmin_LightGBM", "ML_Ensemble", # ML Grubu
-        "Final_Ensemble", # Ağırlıklı Sonuç
-        "Sinyal"
+        "Tahmin_ARIMA", "Tahmin_Prophet", "TS_Ensemble",
+        "Tahmin_SVR", "Tahmin_RandomForest", "Tahmin_LightGBM", "ML_Ensemble",
+        "Final_Ensemble", "Sinyal", "Sinyal_Gerekcesi"
     ]
     
+    # Ekran çıktısı için kopya alıp sütun isimlerini kısaltıyoruz
+    display_df = final_table[cols].copy()
+    display_df.rename(columns={
+        "Tahmin_ARIMA": "ARIMA",
+        "Tahmin_Prophet": "Prophet",
+        "TS_Ensemble": "TS_ORT",
+        "Tahmin_SVR": "SVR",
+        "Tahmin_RandomForest": "R.Forest",
+        "Tahmin_LightGBM": "L.GBM",
+        "ML_Ensemble": "ML_ORT",
+        "Final_Ensemble": "FİNAL",
+        "Sinyal": "KARAR",
+        "Sinyal_Gerekcesi": "NEDEN"
+    }, inplace=True)
+    
     # Tabloyu yazdır
-    print(final_table[cols].to_string())
+    print(display_df.to_string())
     print("-" * 120)
     
-    # Kaydet
-    final_table.to_csv("tam_detayli_rapor.csv")
-    print("\n[BİLGİ] Tüm veriler 'tam_detayli_rapor.csv' dosyasına da kaydedildi.")
+    report_file = f"{ticker_name}_final_tahmin_raporu.csv"
+    final_table.to_csv(report_file)
+    print(f"\n[BİLGİ] Rapor '{report_file}' olarak kaydedildi.")
+    print(f"[BİLGİ] Eğitilen modeller 'models/{ticker_name}/' klasörüne kaydedildi.")
 
 if __name__ == "__main__":
     main()
