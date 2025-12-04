@@ -48,7 +48,7 @@ CSV dosyalarını şimdilik gizli tutuyoruz (Veri setleri ve Raporlar)
 *.csv
 *.xlsx
 *.xls
-
+*.docx
 Veri Klasörleri (Eğer klasör yapısı kullanıyorsanız)
 
 data/
@@ -78,3 +78,4 @@ Log Dosyaları
 
 .DS_Store
 Thumbs.db
+

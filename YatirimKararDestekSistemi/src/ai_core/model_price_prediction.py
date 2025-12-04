@@ -5,7 +5,7 @@ import joblib
 from prophet import Prophet
 from arch import arch_model
 from pmdarima import auto_arima
-from ml_models import MLEngine
+from ai_core.ml_models import MLEngine
 import warnings
 
 pd.options.display.float_format = '{:,.2f}'.format
@@ -86,7 +86,8 @@ class HybridModel:
         return pd.DataFrame({"Tahmin_ARIMA": forecast.values}, index=future_dates)
 
     def predict_ml_models(self, df, future_dates):
-        self.ml_engine = MLEngine(df, n_future=self.n_future)
+        # Window size'ı 30 gün olarak belirledik (Bir aylık hafıza)
+        self.ml_engine = MLEngine(df, n_future=self.n_future, window_size=30)
         ml_results = self.ml_engine.run_all_models()
         ml_results.index = future_dates
         return ml_results

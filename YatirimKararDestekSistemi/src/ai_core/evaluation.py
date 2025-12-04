@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 from sklearn.metrics import mean_squared_error, mean_absolute_percentage_error
-from model_price_prediction import HybridModel
+from ai_core.model_price_prediction import HybridModel
 
 class ModelEvaluator:
     def __init__(self, df, test_days=30):
