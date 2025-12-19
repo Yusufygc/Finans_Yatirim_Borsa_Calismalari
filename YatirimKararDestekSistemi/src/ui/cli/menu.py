@@ -24,11 +24,13 @@ class ConsoleMenu:
         from src.services.market_data import MarketDataService
         from src.services.analysis_service import AnalysisService
         from src.services.portfolio_analytics import PortfolioAnalyticsService  # <-- YENİ
+        from src.services.visualization import PortfolioVisualizationService
         
         self.trade_service = TradeService(self.db)
         self.market_service = MarketDataService(self.db)
         self.analysis_service = AnalysisService(self.db)
         self.analytics_service = PortfolioAnalyticsService(self.db) # <-- YENİ
+        self.viz_service = PortfolioVisualizationService(self.db)
 
     def clear_screen(self):
         os.system('cls' if os.name == 'nt' else 'clear')
@@ -271,6 +273,54 @@ class ConsoleMenu:
         
         input("\nDevam...")
 
+    def visualization_menu(self):
+        self.show_header()
+        print(Colors.BLUE + ">> GÖRSEL RAPORLAMA MERKEZİ" + Colors.ENDC)
+        print("Bu işlem portföy verilerinizi analiz ederek grafik dosyaları oluşturur.\n")
+        
+        print("1. Tüm Grafikleri Oluştur (Toplu Rapor)")
+        print("2. Sadece Portföy Dağılımı (Pasta)")
+        print("3. Kar/Zarar Analizi")
+        print("4. Karşılaştırmalı Performans")
+        print("q. Geri Dön")
+        
+        choice = input("\nSeçiminiz: ").strip()
+        
+        if choice.lower() == 'q': return
+
+        print("\nGrafikler hazırlanıyor, lütfen bekleyin...")
+        generated_files = []
+
+        try:
+            if choice == '1' or choice == '2':
+                path = self.viz_service.plot_portfolio_allocation(self.user_id)
+                if path: generated_files.append(f"Varlık Dağılımı: {path}")
+
+            if choice == '1' or choice == '3':
+                path = self.viz_service.plot_profit_loss_breakdown(self.user_id)
+                if path: generated_files.append(f"Kar/Zarar: {path}")
+
+            if choice == '1' or choice == '4':
+                path = self.viz_service.plot_combined_performance(self.user_id)
+                if path: generated_files.append(f"Performans: {path}")
+                
+                # Ekstraları da toplu raporda basalım
+                path2 = self.viz_service.plot_individual_stocks(self.user_id)
+                if path2: generated_files.append(f"Tekil Grafikler: {path2}")
+                
+                path3 = self.viz_service.plot_correlation_matrix(self.user_id)
+                if path3: generated_files.append(f"Risk Matrisi: {path3}")
+
+            print(Colors.GREEN + "\n✅ GRAFİKLER BAŞARIYLA OLUŞTURULDU!" + Colors.ENDC)
+            print("Dosyalar şu klasörde: " + Colors.BOLD + "reports/graphs/" + Colors.ENDC)
+            for f in generated_files:
+                print(f"  -> {f}")
+                
+        except Exception as e:
+            print(Colors.FAIL + f"\nHata oluştu: {e}" + Colors.ENDC)
+
+        input("\nMenüye dönmek için Enter...")
+
     def main_loop(self):
         while True:
             self.show_header()
@@ -279,7 +329,8 @@ class ConsoleMenu:
             print("3. Hisse Sat")
             print("4. AI Analiz (Tahmin)")
             print("5. Piyasa Verilerini Güncelle (Manuel)")
-            print("6. Çıkış")
+            print("6. Görsel Raporlar (Grafik Oluştur)")
+            print("7. Çıkış")
             
             choice = input("\nSeçiminiz: ").strip()
             
@@ -296,6 +347,8 @@ class ConsoleMenu:
                  self.market_service.update_all_tickers()
                  input("\nTamamlandı. Enter...")
             elif choice == '6':
+                self.visualization_menu()
+            elif choice == '7':
                 print("Çıkış yapılıyor...")
                 break
             else:
