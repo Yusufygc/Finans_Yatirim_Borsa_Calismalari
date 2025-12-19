@@ -15,21 +15,22 @@ class MarketDataService:
     def get_ticker_info(self, symbol: str):
         """
         Tek bir hissenin anlık/günlük verisini yfinance'dan çeker.
-        Veritabanına YAZMAZ, sadece UI'da göstermek içindir.
+        Hata durumunda karmaşık loglar yerine None döner.
         """
         yf_symbol = symbol if ".IS" in symbol or symbol == "USDTRY" else f"{symbol}.IS"
         
         try:
+            # yfinance bazı hataları stdout'a basar, bunu engellemek zor olabilir ama
+            # temel mantıkta boş veri gelirse None dönmeliyiz.
             ticker = yf.Ticker(yf_symbol)
-            # Son 1 günlük veriyi al
+            
+            # period="1d" son günü getirir
             hist = ticker.history(period="1d")
             
             if hist.empty:
                 return None
             
-            # Pandas Series olarak son satırı (bugünü) al
             latest = hist.iloc[-1]
-            
             return {
                 "date": latest.name.date(),
                 "open": float(latest["Open"]),
@@ -38,8 +39,8 @@ class MarketDataService:
                 "close": float(latest["Close"]),
                 "volume": int(latest["Volume"])
             }
-        except Exception as e:
-            print(f"[HATA] {symbol} anlık verisi çekilirken hata: {e}")
+        except Exception:
+            # Hata detayını kullanıcıya göstermeye gerek yok, None dönmesi yeterli
             return None
 
     def update_price_history(self, symbol: str):

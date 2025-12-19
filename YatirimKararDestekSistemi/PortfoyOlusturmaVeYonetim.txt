@@ -7,7 +7,7 @@ hissede alım veya satım işlemleri kontrol edilecek
 
 hisseler listelenecek gün sonu kapanış fiyatları yfinance dan güncellenecek ve önceki gün ile kıyaslanıp artı eksi oranı kar zarar durumu her gün güncellenebilecek bunları veri tabanında tutacağız
 
-o günün tüm hisseler için kapanış fiyatları güncellenip önceki güne göre kıyaslaması yapılacak
+o günün sahip olunan hisseler için kapanış fiyatları güncellenip önceki güne göre kıyaslaması yapılacak
 
 portföyün haftalık ve aylık getiri oranları da hesaplanabilecek
 
