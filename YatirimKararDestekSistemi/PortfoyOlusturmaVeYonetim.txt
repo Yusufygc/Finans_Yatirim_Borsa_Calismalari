@@ -1,0 +1,96 @@
+kaynak kodlarım son hali bu şekilde şimdi profesyonel bir aracı kurum mantığıyla hisse alım satım ve portföy yönetim mekanizması oluşturacağız. Kodlarımız clean code, solid ve oop prensiplerine bağlı olacak. hisse işlemleri CRUD işlemlerini destekleyecek update işlemi aynı hisseye ekleme ve satma işlemi olacak.
+********************************************************
+clean code, solid ve oop prensiplerine bağlı 
+kullanıcı istediği kadar hisse ekleyebilecek  (CRUD) 
+hisseyi eklediği gün, lot sayısı ,eklediği fiyat , maliyet tutulacak
+hissede alım veya satım işlemleri kontrol edilecek
+
+hisseler listelenecek gün sonu kapanış fiyatları yfinance dan güncellenecek ve önceki gün ile kıyaslanıp artı eksi oranı kar zarar durumu her gün güncellenebilecek bunları veri tabanında tutacağız
+
+o günün tüm hisseler için kapanış fiyatları güncellenip önceki güne göre kıyaslaması yapılacak
+
+portföyün haftalık ve aylık getiri oranları da hesaplanabilecek
+
+projenin ana şeması bu şekilde şimdi bana profesyonel bir fintek yazılımcısı olarak kodları oluştur. Ama şimdilik konsolda çalışıyoruz ilerde stearmlite geçeceğiz bu geçişi kolay sağlaycak şekilde kodları oluştur 
+
+************************************************************************
+portföyü göstere tıklayınca listelenen hisselerin altına hisse al, hisse sat seçeneği olsun
+
+Hisse Ekleme ve Alım/Satım İşlemi İyileştirme Talebi
+Hisse ekleme veya lot alım/satım işlemlerinde aşağıdaki özelliklerin entegre edilmesi istenmektedir:
+1. Gerçek Zamanlı Fiyat Entegrasyonu:
+
+Kullanıcı hisse senedi kodunu (ticker) girdikten sonra, yfinance kütüphanesi üzerinden ilgili hissenin güncel piyasa fiyatı otomatik olarak çekilmeli ve kullanıcıya görsel olarak sunulmalıdır.
+
+2. Dinamik Hesaplama Mekanizması:
+İki yönlü hesaplama desteği sağlanmalıdır:
+
+Para Bazlı Hesaplama: Kullanıcı yatırmak istediği tutarı girdiğinde, mevcut hisse fiyatına göre alabileceği maksimum lot sayısı otomatik hesaplanmalı ve gösterilmelidir.
+Lot Bazlı Hesaplama: Kullanıcı almak istediği lot sayısını girdiğinde, gerekli toplam yatırım tutarı otomatik olarak hesaplanmalı ve gösterilmelidir.
+
+3. Kullanıcı Deneyimi:
+
+Her iki hesaplama yöntemi de gerçek zamanlı (real-time) olarak çalışmalı
+Hesaplamalar kullanıcı veri girişi sırasında dinamik olarak güncellenmelidir
+Lot büyüklüğü (100 hisse/lot gibi) dikkate alınarak hesaplama yapılmalıdır
+Kullanıcıya net ve anlaşılır bir arayüz sunulmalıdır
+
+Amaç: İşlem sürecini optimize ederek kullanıcı deneyimini iyileştirmek ve hızlı, hatasız işlem gerçekleştirmeyi sağlamak.
+*************************
+hisse veya lot eklerken tarih kısmında hafta sonu veri eklenmemesini ve saat kısmında 10-18 arası olmasını sağlamalıyız. Gerçek bir aracı kurum gibi. Ama kullanıcı hafta sonu hafta içi yaptığı işlemleri ekleyebilmeli sadece işlemlerin kaydı esnasında hafta sonları veya tatillerde ve saat 10.00-18.00 aralığı dışında kayıt yapmamalıyız(tarih ve saat için hafta sonunu direkt engelle). İleri tarihler için kayıt yapılmasını engellemeliyiz
+*************************
+hissenin tüm lotları satılınca otomatik olarak portföyden silinsin
+*************************************************************************
+fiyatta, maliyette, ve gerekli yerlerde "," ve "." dönüşümleri yapalım
+************************************************************************
+tüm portföyü sıfırlamak için seçenek sunalım yani hisse senetleri, işlemler falan silinsin
+
+************************************************************************
+
+Fiyat çekme mekanizması:
+
+Öncelik Sırası İle Veri Çekme:
+
+Birincil: Piyasa açıkken en güncel anlık fiyat (current/intraday price)
+İkincil: Piyasa kapalıysa son işlem gününün kapanış fiyatı (last close price)
+
+Kullanılacak yfinance Methodları:
+
+Ticker.info['currentPrice'] veya Ticker.info['regularMarketPrice'] - Anlık fiyat için
+Ticker.history(period='1d') ile fallback mekanizması
+
+Hata Yönetimi:
+
+Try-except yapısı ile güvenli veri çekme
+Veri bulunamadığında kullanıcıya anlamlı hata mesajı gösterme
+Alternatif veri kaynaklarına yönlendirme mekanizması
+
+Kullanıcı Bilgilendirme:
+
+Fiyatın güncel mi yoksa son kapanış fiyatı mı olduğu belirtilmeli
+Fiyat bilgisinin tarih/saat damgası (timestamp) gösterilmeli
+
+Beklenen Davranış:
+Piyasa durumundan bağımsız olarak kullanıcıya her zaman erişilebilir en güncel fiyat bilgisi sunulmalıdır.
+
+************************************************************************
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

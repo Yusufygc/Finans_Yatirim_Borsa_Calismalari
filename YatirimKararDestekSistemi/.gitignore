@@ -51,9 +51,9 @@ CSV dosyalarını şimdilik gizli tutuyoruz (Veri setleri ve Raporlar)
 
 Veri Klasörleri (Eğer klasör yapısı kullanıyorsanız)
 
-data/
-data/raw/
-data/processed/
+dataSets/
+dataSets/raw/
+dataSets/processed/
 src/*.csv
 Oluşturulan Grafikler ve Görseller
 

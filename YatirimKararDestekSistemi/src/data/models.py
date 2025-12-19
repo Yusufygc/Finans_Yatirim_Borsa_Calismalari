@@ -1,0 +1,126 @@
+#(Tablo tanımları)
+# src/data/models.py
+
+from sqlalchemy import Column, String, Date, DateTime, ForeignKey, Enum, DECIMAL, Text, Float
+from sqlalchemy.dialects.mysql import INTEGER, BIGINT
+from sqlalchemy.orm import relationship
+from datetime import datetime
+from src.data.database import Base
+
+# --- 1. KULLANICILAR ---
+class User(Base):
+    __tablename__ = 'users'
+    
+    id = Column(INTEGER(unsigned=True), primary_key=True, index=True)
+    username = Column(String(50), unique=True, nullable=False)
+    email = Column(String(100), unique=True)
+    password_hash = Column(String(255))
+    risk_profile = Column(Enum('temkinli', 'orta', 'agresif'), default='orta')
+    created_at = Column(DateTime, default=datetime.now)
+
+    # İlişkiler
+    holdings = relationship("PortfolioHolding", back_populates="user")
+    transactions = relationship("Transaction", back_populates="user")
+    sim_sessions = relationship("SimSession", back_populates="user")
+
+# --- 2. HİSSE SENETLERİ ---
+class Security(Base):
+    __tablename__ = 'securities'
+    
+    id = Column(INTEGER(unsigned=True), primary_key=True)
+    symbol = Column(String(20), unique=True, nullable=False)  # Örn: ASELS
+    name = Column(String(100))
+    exchange = Column(String(20), default='BIST')
+    currency = Column(String(10), default='TRY')
+    created_at = Column(DateTime, default=datetime.now)
+
+    # İlişkiler
+    prices = relationship("PriceHistory", back_populates="security")
+    predictions = relationship("AiPrediction", back_populates="security")
+    # Bir hisse birden çok portföyde olabilir, ama PortfolioHolding ara tablosuyla yönetiyoruz.
+
+# --- 3. FİYAT GEÇMİŞİ ---
+class PriceHistory(Base):
+    __tablename__ = 'price_history'
+    
+    id = Column(BIGINT(unsigned=True), primary_key=True)
+    security_id = Column(INTEGER(unsigned=True), ForeignKey('securities.id'), nullable=False)
+    date = Column(Date, nullable=False)
+    open_price = Column(DECIMAL(10, 4))
+    high_price = Column(DECIMAL(10, 4))
+    low_price = Column(DECIMAL(10, 4))
+    close_price = Column(DECIMAL(10, 4), nullable=False)
+    volume = Column(BIGINT)
+
+    security = relationship("Security", back_populates="prices")
+
+# --- 4. GERÇEK İŞLEMLER (LOG KAYDI) ---
+class Transaction(Base):
+    """Her alım-satım işlemi buraya 'değiştirilemez' bir kayıt olarak atılır."""
+    __tablename__ = 'transactions'
+    
+    id = Column(BIGINT(unsigned=True), primary_key=True)
+    user_id = Column(INTEGER(unsigned=True), ForeignKey('users.id'), nullable=False)
+    security_id = Column(INTEGER(unsigned=True), ForeignKey('securities.id'), nullable=False)
+    
+    trade_date = Column(DateTime, default=datetime.now, nullable=False)
+    side = Column(Enum('BUY', 'SELL'), nullable=False) # İşlem Yönü
+    quantity = Column(DECIMAL(18, 4), nullable=False)  # Kaç adet
+    price = Column(DECIMAL(18, 4), nullable=False)     # Hangi fiyattan
+    fee = Column(DECIMAL(18, 4), default=0)            # Komisyon (Opsiyonel)
+    note = Column(String(255))
+
+    user = relationship("User", back_populates="transactions")
+    security = relationship("Security")
+
+# --- 5. PORTFÖY (ANLIK DURUM) ---
+class PortfolioHolding(Base):
+    """Kullanıcının şu an elinde ne kadar mal olduğunu tutar (Snapshot)."""
+    __tablename__ = 'portfolio_holdings'
+    
+    user_id = Column(INTEGER(unsigned=True), ForeignKey('users.id'), primary_key=True)
+    security_id = Column(INTEGER(unsigned=True), ForeignKey('securities.id'), primary_key=True)
+    
+    quantity = Column(DECIMAL(18, 4), default=0)
+    avg_cost = Column(DECIMAL(18, 4), default=0) # Ağırlıklı Ortalama Maliyet
+    current_value = Column(DECIMAL(18, 4))       # Gün sonu tetikleyicisiyle güncellenebilir
+
+    user = relationship("User", back_populates="holdings")
+    security = relationship("Security")
+
+# --- 6. AI TAHMİNLERİ ---
+class AiPrediction(Base):
+    __tablename__ = 'ai_predictions'
+    
+    id = Column(BIGINT(unsigned=True), primary_key=True)
+    security_id = Column(INTEGER(unsigned=True), ForeignKey('securities.id'), nullable=False)
+    
+    prediction_date = Column(Date, default=datetime.utcnow) # Tahmin üretilen gün
+    target_date = Column(Date, nullable=False)              # Hedef gün (T+1, T+5 vb.)
+    predicted_price = Column(DECIMAL(18, 4))
+    model_name = Column(String(50))     # 'Hybrid_v1', 'LSTM' vb.
+    confidence_score = Column(DECIMAL(5, 2))
+    signal = Column(String(20))         # 'AL', 'SAT', 'TUT' (SQL'de yoktu ama kodda kullanıyorsun, ekledim)
+
+    security = relationship("Security", back_populates="predictions")
+
+# --- 7. SİMÜLASYON (Opsiyonel ama SQL'de var) ---
+class SimSession(Base):
+    __tablename__ = 'sim_sessions'
+    id = Column(BIGINT(unsigned=True), primary_key=True)
+    user_id = Column(INTEGER(unsigned=True), ForeignKey('users.id'))
+    name = Column(String(100))
+    initial_capital = Column(DECIMAL(18, 4))
+    status = Column(Enum('ACTIVE', 'FINISHED'), default='ACTIVE')
+    
+    user = relationship("User", back_populates="sim_sessions")
+
+# --- 8. DUYGU ANALİZİ ---
+class SentimentLog(Base):
+    __tablename__ = 'sentiment_logs'
+    id = Column(BIGINT(unsigned=True), primary_key=True)
+    security_id = Column(INTEGER(unsigned=True), ForeignKey('securities.id'))
+    source = Column(String(50))
+    sentiment_score = Column(DECIMAL(5, 2))
+    content_summary = Column(Text)
+    created_at = Column(DateTime, default=datetime.now)
