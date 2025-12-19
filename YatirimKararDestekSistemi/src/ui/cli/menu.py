@@ -1,7 +1,7 @@
 import sys
 import os
 from time import sleep
-from datetime import datetime, time
+from datetime import datetime, time, date
 
 # Konsol Renkleri
 class Colors:
@@ -70,6 +70,10 @@ class ConsoleMenu:
                 print(Colors.FAIL + "  -> Hatalı format! Sayısal değer giriniz." + Colors.ENDC)
 
     def check_market_status(self):
+        """
+        Piyasa kontrolü yapar. 
+        Geçmiş tarih girilirse Hafta Sonu ve Gelecek Tarih kontrolü de yapar.
+        """
         now = datetime.now()
         is_weekend = now.weekday() >= 5 
         
@@ -78,6 +82,7 @@ class ConsoleMenu:
         market_close = time(18, 5) 
         is_off_hours = not (market_open <= current_time <= market_close)
 
+        # Eğer şu an piyasa kapalıysa veya hafta sonuysa
         if is_weekend or is_off_hours:
             print(Colors.FAIL + "\n[UYARI] Şu an piyasalar KAPALI." + Colors.ENDC)
             
@@ -90,17 +95,37 @@ class ConsoleMenu:
                         date_str = self.get_input("İşlem Tarihi (YYYY-AA-GG): ")
                         if date_str is None: return "CANCEL"
                         try:
-                            return datetime.strptime(date_str, "%Y-%m-%d")
+                            custom_date = datetime.strptime(date_str, "%Y-%m-%d")
+                            
+                            # KONTROL 1: GELECEK TARİH ENGELLİ
+                            if custom_date.date() > date.today():
+                                print(Colors.FAIL + "  -> Hata: Geleceğe işlem giremezsiniz!" + Colors.ENDC)
+                                continue
+
+                            # KONTROL 2: HAFTA SONU ENGELLİ
+                            # weekday(): 0=Pzt ... 5=Cmt, 6=Paz
+                            if custom_date.weekday() >= 5:
+                                day_name = "Cumartesi" if custom_date.weekday() == 5 else "Pazar"
+                                print(Colors.FAIL + f"  -> Hata: {day_name} günü borsa kapalıdır. İşlem girilemez." + Colors.ENDC)
+                                continue
+                            
+                            return custom_date
+
                         except ValueError:
-                            print("Hatalı tarih formatı!")
+                            print(Colors.FAIL + "  -> Hatalı tarih formatı! YYYY-AA-GG (Örn: 2023-12-25)" + Colors.ENDC)
+                
                 elif choice.upper() == 'H':
                     return "CANCEL"
+                else:
+                    print("Lütfen 'E' veya 'H' giriniz.")
+        
         return None
-
+    
     def print_mini_portfolio(self):
         """İşlem ekranında özet bilgi."""
-        # Hızlı olması için eski servisi kullanmaya devam edebiliriz veya basitleştirebiliriz.
+        # Portföy verisini çek
         report = self.analysis_service.calculate_portfolio_performance(self.user_id)
+        
         print(Colors.CYAN + "\n--- GÜNCEL VARLIKLAR ---" + Colors.ENDC)
         if not report["positions"]:
             print("Portföyünüz boş.")
@@ -109,6 +134,12 @@ class ConsoleMenu:
                 pl_color = Colors.GREEN if pos['pl'] >= 0 else Colors.FAIL
                 print(f"• {pos['symbol']:<6}: {pos['quantity']:<6} Adet | Mal: {pos['avg_cost']:<8.2f} | K/Z: {pl_color}{pos['pl']:<8.2f}{Colors.ENDC}")
         print("-" * 65 + "\n")
+        
+        # --- KRİTİK DÜZELTME BURADA ---
+        # Portföydeki hisseleri ve adetlerini bir sözlük olarak döndür
+        # Örnek Çıktı: {'ASELS': 100.0, 'THYAO': 50.0}
+        owned_stocks = {pos['symbol']: float(pos['quantity']) for pos in report["positions"]}
+        return owned_stocks
 
     # --- YENİLENEN PORTFÖY EKRANI ---
 
@@ -180,22 +211,29 @@ class ConsoleMenu:
         input("\nAna menüye dönmek için Enter...")
 
     def trade_flow(self, side="BUY"):
-        """Alım ve Satım akışı - Sembol Doğrulamalı"""
+        """Alım ve Satım akışı - Gelişmiş Validasyonlu"""
         self.show_header()
         action_name = "ALIM" if side == "BUY" else "SATIŞ"
         print(Colors.BLUE + f">> HİSSE {action_name} İŞLEMİ" + Colors.ENDC)
         print(Colors.WARNING + "(Ana menüye dönmek için 'q' yazın)" + Colors.ENDC)
 
-        self.print_mini_portfolio()
+        # 1. Portföyü Göster ve Sahip Olunanları Al
+        owned_stocks = self.print_mini_portfolio()
 
         valid_ticker_info = None
         symbol = ""
         
+        # --- SEMBOL DÖNGÜSÜ ---
         while True:
             symbol = self.get_input("Hisse Sembolü (Örn: ASELS): ")
             if not symbol: return 
 
             symbol = symbol.upper()
+            
+            # KONTROL 1: Satış yapılacaksa, hisse elde var mı?
+            if side == "SELL" and symbol not in owned_stocks:
+                print(Colors.FAIL + f"❌ HATA: Portföyünüzde '{symbol}' hissesi bulunmuyor. Satış yapılamaz." + Colors.ENDC)
+                continue # Tekrar sembol sor
             
             print("Kontrol ediliyor...", end="\r")
             ticker_info = self.market_service.get_ticker_info(symbol)
@@ -208,12 +246,25 @@ class ConsoleMenu:
             else:
                 print(Colors.FAIL + f"❌ '{symbol}' bulunamadı. Tekrar deneyin." + Colors.ENDC)
 
+        # --- TARİH KONTROLÜ ---
         trade_date = self.check_market_status()
         if trade_date == "CANCEL": return
 
-        qty = self.get_valid_number("Adet: ")
-        if qty is None: return 
+        # --- ADET DÖNGÜSÜ (Stok Kontrollü) ---
+        while True:
+            qty = self.get_valid_number("Adet: ")
+            if qty is None: return 
+            
+            # KONTROL 2: Satış miktar kontrolü
+            if side == "SELL":
+                owned_qty = owned_stocks[symbol]
+                if qty > owned_qty:
+                    print(Colors.FAIL + f"❌ HATA: Yetersiz bakiye! Mevcut: {owned_qty}, Satılmak istenen: {qty}" + Colors.ENDC)
+                    continue # Tekrar adet sor
+            
+            break # Sorun yoksa döngüden çık
 
+        # 4. Fiyat Girişi
         current_price = valid_ticker_info['close']
         default_price_str = f" ({current_price:.2f})"
         
