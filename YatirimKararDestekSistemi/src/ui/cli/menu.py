@@ -32,9 +32,9 @@ class ConsoleMenu:
 
     def show_header(self):
         self.clear_screen()
-        print(Colors.HEADER + "="*60)
-        print("   YATIRIM KARAR DESTEK SİSTEMİ (v2.1 - Pro)")
-        print("="*60 + Colors.ENDC)
+        print(Colors.HEADER + "="*65)
+        print("      YATIRIM KARAR DESTEK SİSTEMİ (v2.2 - Live Update)")
+        print("="*65 + Colors.ENDC)
 
     # --- YARDIMCI METOTLAR ---
     
@@ -52,10 +52,10 @@ class ConsoleMenu:
         now = datetime.now()
         is_weekend = now.weekday() >= 5 # 5=Cmt, 6=Paz
         
-        # Basit saat kontrolü (10:00 - 18:00 arası açık varsayalım)
+        # Basit saat kontrolü (10:00 - 18:05 arası açık varsayalım)
         current_time = now.time()
         market_open = time(10, 0)
-        market_close = time(18, 5) # BIST kapanış + karanlık oda
+        market_close = time(18, 5) 
         is_off_hours = not (market_open <= current_time <= market_close)
 
         if is_weekend or is_off_hours:
@@ -64,7 +64,7 @@ class ConsoleMenu:
             choice = self.get_input("Bu geçmiş tarihli bir işlem mi? (E/H): ")
             
             if choice and choice.upper() == 'E':
-                date_str = self.get_input("İşlem Tarihi (YYYY-AA-GG formatında): ")
+                date_str = self.get_input("İşlem Tarihi (YYYY-AA-GG): ")
                 if not date_str: return "CANCEL"
                 try:
                     custom_date = datetime.strptime(date_str, "%Y-%m-%d")
@@ -79,14 +79,17 @@ class ConsoleMenu:
 
     def print_mini_portfolio(self):
         """İşlem yaparken üstte özet portföyü gösterir."""
+        # Burada update yapmıyoruz ki işlem ekranı hızlı açılsın
         report = self.analysis_service.calculate_portfolio_performance(self.user_id)
         print(Colors.CYAN + "\n--- GÜNCEL PORTFÖYÜNÜZ ---" + Colors.ENDC)
         if not report["positions"]:
             print("Portföyünüz boş.")
         else:
             for pos in report["positions"]:
-                print(f"• {pos['symbol']}: {pos['quantity']} Adet (Ort. Mal: {pos['avg_cost']:.2f})")
-        print("-" * 30 + "\n")
+                # Kar/Zarar Renklendirme
+                pl_color = Colors.GREEN if pos['pl'] >= 0 else Colors.FAIL
+                print(f"• {pos['symbol']:<6}: {pos['quantity']:<6} Adet | Mal: {pos['avg_cost']:<8.2f} | Fiyat: {pos['current_price']:<8.2f} | K/Z: {pl_color}{pos['pl']:<8.2f}{Colors.ENDC}")
+        print("-" * 65 + "\n")
 
     # --- MENÜ FONKSİYONLARI ---
 
@@ -114,7 +117,7 @@ class ConsoleMenu:
             current_price = ticker_info['close']
             print(Colors.GREEN + f"✅ {symbol} Son Fiyat: {current_price:.2f} TL (Tarih: {ticker_info['date']})" + Colors.ENDC)
         else:
-            print(Colors.FAIL + "⚠️ Fiyat bilgisi çekilemedi. Manuel giriş yapmanız gerekebilir." + Colors.ENDC)
+            print(Colors.FAIL + "⚠️ Fiyat bilgisi çekilemedi veya sembol hatalı." + Colors.ENDC)
 
         # 3. Piyasa Kontrolü (Haftasonu/Gece Engeli)
         trade_date = self.check_market_status()
@@ -124,20 +127,21 @@ class ConsoleMenu:
         try:
             qty_str = self.get_input("Adet: ")
             if not qty_str: return
-            qty = float(qty_str)
+            
+            # --- DÜZELTME BURADA: Virgülü noktaya çeviriyoruz ---
+            qty = float(qty_str.replace(',', '.')) 
 
-            # Fiyatı otomatik getir ama değiştirmeye izin ver
             default_price_str = f" ({current_price:.2f})" if current_price > 0 else ""
             price_str = self.get_input(f"İşlem Fiyatı{default_price_str}: ")
+            
             if not price_str and current_price > 0:
                 price = current_price
-            elif not price_str and current_price == 0:
-                print("Fiyat girmelisiniz!")
-                return
-            elif not price_str: # Kullanıcı iptal dedi
+            elif not price_str:
+                 print("Fiyat girmelisiniz!")
                  return
             else:
-                price = float(price_str)
+                # --- DÜZELTME BURADA: Virgülü noktaya çeviriyoruz ---
+                price = float(price_str.replace(',', '.'))
 
             # Onay İste
             print(Colors.WARNING + f"\nÖZET: {symbol} - {qty} Adet x {price} TL" + Colors.ENDC)
@@ -155,11 +159,15 @@ class ConsoleMenu:
 
             if result["status"] == "success":
                 print(Colors.GREEN + f"\n[BAŞARILI] {result['message']}" + Colors.ENDC)
+                
+                print(f"[SİSTEM] {symbol} için güncel veriler indiriliyor...")
+                self.market_service.update_price_history(symbol)
+                
             else:
                 print(Colors.FAIL + f"\n[HATA] {result['message']}" + Colors.ENDC)
 
         except ValueError:
-            print(Colors.FAIL + "Hatalı sayısal değer girdiniz!" + Colors.ENDC)
+            print(Colors.FAIL + "Hatalı sayısal değer girdiniz! (Lütfen sadece rakam kullanın)" + Colors.ENDC)
         
         input("\nDevam etmek için Enter...")
 
@@ -167,25 +175,27 @@ class ConsoleMenu:
         self.show_header()
         print(Colors.BLUE + ">> DETAYLI PORTFÖY RAPORU" + Colors.ENDC)
         
-        # Piyasa verilerini güncelle (Opsiyonel - hızlı olması için kapatılabilir)
-        print("Piyasa verileri güncelleniyor...")
-        # self.market_service.update_all_tickers() # Çok hisse varsa yavaşlatabilir
+        # --- DÜZELTME: Bu satırı aktifleştirdik ---
+        print("Piyasa verileri güncelleniyor, lütfen bekleyin...")
+        self.market_service.update_all_tickers() 
+        # ------------------------------------------
 
         report = self.analysis_service.calculate_portfolio_performance(self.user_id)
         
-        print(f"\nToplam Değer : {report['total_value']:.2f} TL")
-        print(f"Toplam Maliyet: {report['total_cost']:.2f} TL")
+        print(f"\nToplam Değer  : {report['total_value']:.2f} TL")
+        print(f"Toplam Maliyet  : {report['total_cost']:.2f} TL")
         
         pl_color = Colors.GREEN if report['total_pl'] >= 0 else Colors.FAIL
-        print(f"Kar/Zarar    : {pl_color}{report['total_pl']:.2f} TL (%{report['pl_percentage']:.2f}){Colors.ENDC}\n")
+        print(f"Kar/Zarar       : {pl_color}{report['total_pl']:.2f} TL (%{report['pl_percentage']:.2f}){Colors.ENDC}\n")
         
-        print("-" * 75)
-        print(f"{'HİSSE':<10} {'ADET':<10} {'MALİYET':<12} {'GÜNCEL':<12} {'DEĞER':<12} {'K/Z':<12}")
-        print("-" * 75)
+        print("-" * 85)
+        # Tablo başlıklarını hizaladık
+        print(f"{'HİSSE':<10} {'ADET':<10} {'MALİYET':<12} {'GÜNCEL':<12} {'DEĞER':<15} {'K/Z':<12}")
+        print("-" * 85)
         
         for pos in report["positions"]:
             p_color = Colors.GREEN if pos['pl'] >= 0 else Colors.FAIL
-            print(f"{pos['symbol']:<10} {pos['quantity']:<10.1f} {pos['avg_cost']:<12.2f} {pos['current_price']:<12.2f} {pos['market_value']:<12.2f} {p_color}{pos['pl']:<12.2f}{Colors.ENDC}")
+            print(f"{pos['symbol']:<10} {pos['quantity']:<10.1f} {pos['avg_cost']:<12.2f} {pos['current_price']:<12.2f} {pos['market_value']:<15.2f} {p_color}{pos['pl']:<12.2f}{Colors.ENDC}")
         
         input("\nAna menüye dönmek için Enter...")
 
@@ -198,21 +208,21 @@ class ConsoleMenu:
         if not symbol: return
         symbol = symbol.upper()
 
-        # Veri kontrolü
+        # Veri kontrolü ve güncelleme
         self.market_service.update_price_history(symbol)
         
         print("\nAnaliz yapılıyor, modeller çalıştırılıyor...")
         prediction = self.analysis_service.run_prediction(symbol)
         
         if prediction:
-            print(Colors.GREEN + "\n" + "*"*30)
+            print(Colors.GREEN + "\n" + "*"*40)
             print(f" TAHMİN RAPORU: {symbol}")
-            print("*"*30)
-            print(f"Mevcut Fiyat  : ...") # İstenirse eklenebilir
-            print(f"Hedef Fiyat   : {prediction.predicted_price:.2f} TL")
+            print("*"*40)
+            print(f"Mevcut Fiyat  : ...") 
+            print(f"Hedef Fiyat   : {prediction.predicted_price:.2f} TL (T+1)")
             print(f"Model Sinyali : {prediction.signal}")
             print(f"Güven Skoru   : %{float(prediction.confidence_score)*100:.1f}")
-            print("*"*30 + Colors.ENDC)
+            print("*"*40 + Colors.ENDC)
         else:
             print(Colors.FAIL + "\nAnaliz başarısız oldu." + Colors.ENDC)
         
@@ -225,7 +235,8 @@ class ConsoleMenu:
             print("2. Hisse Al")
             print("3. Hisse Sat")
             print("4. AI Analiz (Tahmin)")
-            print("5. Çıkış")
+            print("5. Piyasa Verilerini Güncelle (Manuel)")
+            print("6. Çıkış")
             
             choice = input("\nSeçiminiz: ").strip()
             
@@ -238,6 +249,10 @@ class ConsoleMenu:
             elif choice == '4':
                 self.ai_analysis_menu()
             elif choice == '5':
+                 print("Tüm hisseler güncelleniyor...")
+                 self.market_service.update_all_tickers()
+                 input("\nTamamlandı. Enter...")
+            elif choice == '6':
                 print("Çıkış yapılıyor...")
                 break
             else:
