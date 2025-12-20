@@ -1,7 +1,4 @@
-#(Tablo tanımları)
-# src/data/models.py
-
-from sqlalchemy import Column, String, Date, DateTime, ForeignKey, Enum, DECIMAL, Text, Float
+from sqlalchemy import Column, String, Date, DateTime, ForeignKey, Enum, DECIMAL, Text, Float, Integer
 from sqlalchemy.dialects.mysql import INTEGER, BIGINT
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -22,13 +19,18 @@ class User(Base):
     holdings = relationship("PortfolioHolding", back_populates="user")
     transactions = relationship("Transaction", back_populates="user")
     sim_sessions = relationship("SimSession", back_populates="user")
+    
+    # --- YENİ EKLENEN İLİŞKİLER (Bu satırlar eksikti) ---
+    budgets = relationship("Budget", back_populates="user")
+    goals = relationship("FinancialGoal", back_populates="user")
+    # ----------------------------------------------------
 
 # --- 2. HİSSE SENETLERİ ---
 class Security(Base):
     __tablename__ = 'securities'
     
     id = Column(INTEGER(unsigned=True), primary_key=True)
-    symbol = Column(String(20), unique=True, nullable=False)  # Örn: ASELS
+    symbol = Column(String(20), unique=True, nullable=False)
     name = Column(String(100))
     exchange = Column(String(20), default='BIST')
     currency = Column(String(10), default='TRY')
@@ -37,7 +39,6 @@ class Security(Base):
     # İlişkiler
     prices = relationship("PriceHistory", back_populates="security")
     predictions = relationship("AiPrediction", back_populates="security")
-    # Bir hisse birden çok portföyde olabilir, ama PortfolioHolding ara tablosuyla yönetiyoruz.
 
 # --- 3. FİYAT GEÇMİŞİ ---
 class PriceHistory(Base):
@@ -56,7 +57,6 @@ class PriceHistory(Base):
 
 # --- 4. GERÇEK İŞLEMLER (LOG KAYDI) ---
 class Transaction(Base):
-    """Her alım-satım işlemi buraya 'değiştirilemez' bir kayıt olarak atılır."""
     __tablename__ = 'transactions'
     
     id = Column(BIGINT(unsigned=True), primary_key=True)
@@ -64,10 +64,10 @@ class Transaction(Base):
     security_id = Column(INTEGER(unsigned=True), ForeignKey('securities.id'), nullable=False)
     
     trade_date = Column(DateTime, default=datetime.now, nullable=False)
-    side = Column(Enum('BUY', 'SELL'), nullable=False) # İşlem Yönü
-    quantity = Column(DECIMAL(18, 4), nullable=False)  # Kaç adet
-    price = Column(DECIMAL(18, 4), nullable=False)     # Hangi fiyattan
-    fee = Column(DECIMAL(18, 4), default=0)            # Komisyon (Opsiyonel)
+    side = Column(Enum('BUY', 'SELL'), nullable=False)
+    quantity = Column(DECIMAL(18, 4), nullable=False)
+    price = Column(DECIMAL(18, 4), nullable=False)
+    fee = Column(DECIMAL(18, 4), default=0)
     note = Column(String(255))
 
     user = relationship("User", back_populates="transactions")
@@ -75,15 +75,14 @@ class Transaction(Base):
 
 # --- 5. PORTFÖY (ANLIK DURUM) ---
 class PortfolioHolding(Base):
-    """Kullanıcının şu an elinde ne kadar mal olduğunu tutar (Snapshot)."""
     __tablename__ = 'portfolio_holdings'
     
     user_id = Column(INTEGER(unsigned=True), ForeignKey('users.id'), primary_key=True)
     security_id = Column(INTEGER(unsigned=True), ForeignKey('securities.id'), primary_key=True)
     
     quantity = Column(DECIMAL(18, 4), default=0)
-    avg_cost = Column(DECIMAL(18, 4), default=0) # Ağırlıklı Ortalama Maliyet
-    current_value = Column(DECIMAL(18, 4))       # Gün sonu tetikleyicisiyle güncellenebilir
+    avg_cost = Column(DECIMAL(18, 4), default=0)
+    current_value = Column(DECIMAL(18, 4))
 
     user = relationship("User", back_populates="holdings")
     security = relationship("Security")
@@ -95,16 +94,16 @@ class AiPrediction(Base):
     id = Column(BIGINT(unsigned=True), primary_key=True)
     security_id = Column(INTEGER(unsigned=True), ForeignKey('securities.id'), nullable=False)
     
-    prediction_date = Column(Date, default=datetime.utcnow) # Tahmin üretilen gün
-    target_date = Column(Date, nullable=False)              # Hedef gün (T+1, T+5 vb.)
+    prediction_date = Column(Date, default=datetime.utcnow)
+    target_date = Column(Date, nullable=False)
     predicted_price = Column(DECIMAL(18, 4))
-    model_name = Column(String(50))     # 'Hybrid_v1', 'LSTM' vb.
+    model_name = Column(String(50))
     confidence_score = Column(DECIMAL(5, 2))
-    signal = Column(String(20))         # 'AL', 'SAT', 'TUT' (SQL'de yoktu ama kodda kullanıyorsun, ekledim)
+    signal = Column(String(20))
 
     security = relationship("Security", back_populates="predictions")
 
-# --- 7. SİMÜLASYON (Opsiyonel ama SQL'de var) ---
+# --- 7. SİMÜLASYON ---
 class SimSession(Base):
     __tablename__ = 'sim_sessions'
     id = Column(BIGINT(unsigned=True), primary_key=True)
@@ -124,3 +123,43 @@ class SentimentLog(Base):
     sentiment_score = Column(DECIMAL(5, 2))
     content_summary = Column(Text)
     created_at = Column(DateTime, default=datetime.now)
+
+# --- 9. PLANLAMA VE BÜTÇE (YENİ) ---
+
+class Budget(Base):
+    __tablename__ = 'budgets'
+    id = Column(Integer, primary_key=True, index=True)
+    
+    # unsigned=True düzeltmesi yapıldı
+    user_id = Column(INTEGER(unsigned=True), ForeignKey('users.id'), nullable=False)
+    
+    month = Column(String(7), nullable=False) # Örn: "2025-01"
+    
+    income_salary = Column(Float, default=0.0)
+    income_additional = Column(Float, default=0.0)
+    
+    expense_rent = Column(Float, default=0.0)
+    expense_bills = Column(Float, default=0.0)
+    expense_food = Column(Float, default=0.0)
+    expense_transport = Column(Float, default=0.0)
+    expense_luxury = Column(Float, default=0.0)
+    
+    savings_target = Column(Float, default=0.0)
+
+    user = relationship("User", back_populates="budgets")
+
+class FinancialGoal(Base):
+    __tablename__ = 'financial_goals'
+    id = Column(Integer, primary_key=True, index=True)
+    
+    # unsigned=True düzeltmesi yapıldı
+    user_id = Column(INTEGER(unsigned=True), ForeignKey('users.id'), nullable=False)
+    
+    name = Column(String(100), nullable=False)
+    target_amount = Column(Float, nullable=False)
+    current_amount = Column(Float, default=0.0)
+    deadline = Column(Date, nullable=False)
+    priority = Column(String(10), default="MEDIUM")
+    status = Column(String(10), default="ACTIVE")
+    
+    user = relationship("User", back_populates="goals")
