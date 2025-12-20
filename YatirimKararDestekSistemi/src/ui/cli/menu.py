@@ -13,6 +13,13 @@ class Colors:
     FAIL = '\033[91m'
     ENDC = '\033[0m'
     BOLD = '\033[1m'
+    YELLOW = '\033[33m'
+    MAGENTA = '\033[35m'
+    ORANGE = '\033[91m'
+    PURPLE = '\033[95m'
+    TEAL = '\033[36m'
+    DARKBLUE = '\033[34m'
+    
 
 class ConsoleMenu:
     def __init__(self, db_session, user_id):
@@ -25,12 +32,14 @@ class ConsoleMenu:
         from src.services.analysis_service import AnalysisService
         from src.services.portfolio_analytics import PortfolioAnalyticsService  # <-- YENİ
         from src.services.visualization import PortfolioVisualizationService
+        from src.services.optimization import PortfolioOptimizer
         
         self.trade_service = TradeService(self.db)
         self.market_service = MarketDataService(self.db)
         self.analysis_service = AnalysisService(self.db)
         self.analytics_service = PortfolioAnalyticsService(self.db) # <-- YENİ
         self.viz_service = PortfolioVisualizationService(self.db)
+        self.optimizer = PortfolioOptimizer(self.db)
 
     def clear_screen(self):
         os.system('cls' if os.name == 'nt' else 'clear')
@@ -372,35 +381,83 @@ class ConsoleMenu:
 
         input("\nMenüye dönmek için Enter...")
 
+    def optimization_menu(self):
+        self.show_header()
+        print(Colors.BLUE + ">> HARRY MARKOWITZ PORTFÖY OPTİMİZASYONU" + Colors.ENDC)
+        print("Matematiksel modeller kullanılarak ideal portföy dağılımı hesaplanıyor...\n")
+        
+        # Önce verileri güncelle
+        print("Piyasa verileri kontrol ediliyor...", end="\r")
+        self.market_service.update_all_tickers()
+        
+        result = self.optimizer.optimize_portfolio(self.user_id)
+        
+        if "error" in result:
+            print(Colors.FAIL + f"\n[HATA] {result['error']}" + Colors.ENDC)
+            input("\nMenüye dönmek için Enter...")
+            return
+
+        metrics = result["metrics"]
+        suggestions = result["suggestions"]
+        
+        print("\n" + Colors.CYAN + "METRİK KARŞILAŞTIRMASI" + Colors.ENDC)
+        print("-" * 60)
+        print(f"{'METRİK':<20} {'MEVCUT DURUM':<15} {'OPTİMİZE EDİLMİŞ':<15}")
+        print("-" * 60)
+        
+        def fmt(val): return f"%{val*100:.2f}"
+        
+        # Renklendirme mantığı: İyileşme varsa yeşil
+        ret_color = Colors.GREEN if metrics['optimized']['ret'] > metrics['current']['ret'] else Colors.WARNING
+        vol_color = Colors.GREEN if metrics['optimized']['vol'] < metrics['current']['vol'] else Colors.WARNING
+        shp_color = Colors.GREEN if metrics['optimized']['sharpe'] > metrics['current']['sharpe'] else Colors.WARNING
+        
+        print(f"Yıllık Getiri       {fmt(metrics['current']['ret']):<15} {ret_color}{fmt(metrics['optimized']['ret']):<15}{Colors.ENDC}")
+        print(f"Risk (Volatilite)   {fmt(metrics['current']['vol']):<15} {vol_color}{fmt(metrics['optimized']['vol']):<15}{Colors.ENDC}")
+        print(f"Sharpe Oranı        {metrics['current']['sharpe']:.2f}{' '*11} {shp_color}{metrics['optimized']['sharpe']:.2f}{Colors.ENDC}")
+        print("-" * 60)
+        
+        print("\n" + Colors.CYAN + "OPTİMAL PORTFÖY DAĞILIM ÖNERİSİ" + Colors.ENDC)
+        print(Colors.WARNING + "(Sharpe oranını maksimize etmek için gereken ağırlıklar)" + Colors.ENDC)
+        print("-" * 75)
+        print(f"{'HİSSE':<10} {'MEVCUT (%)':<12} {'İDEAL (%)':<12} {'FARK':<10} {'ÖNERİ'}")
+        print("-" * 75)
+        
+        for item in suggestions:
+            # Renklendirme
+            if item['action'] == "EKLE": act_color = Colors.GREEN
+            elif item['action'] == "AZALT": act_color = Colors.FAIL
+            else: act_color = Colors.BOLD
+            
+            print(f"{item['symbol']:<10} %{item['current_weight']:<11.1f} %{item['optimal_weight']:<11.1f} %{item['change']:<9.1f} {act_color}{item['action']}{Colors.ENDC}")
+            
+        print("-" * 75)
+        input("\nAna menüye dönmek için Enter...")
+
     def main_loop(self):
         while True:
             self.show_header()
-            print("1. Detaylı Portföy Analizi (PRO)")
-            print("2. Hisse Al")
-            print("3. Hisse Sat")
-            print("4. AI Analiz (Tahmin)")
-            print("5. Piyasa Verilerini Güncelle (Manuel)")
-            print("6. Görsel Raporlar (Grafik Oluştur)")
-            print("7. Çıkış")
+            print(Colors.YELLOW + "1. Detaylı Portföy Analizi" + Colors.ENDC)
+            print(Colors.GREEN + "2. Hisse Al" + Colors.ENDC)
+            print(Colors.FAIL + "3. Hisse Sat" + Colors.ENDC)
+            print(Colors.TEAL+ "4. AI Analiz (Tahmin)" + Colors.ENDC)
+            print(Colors.BLUE + "5. Piyasa Verilerini Güncelle" + Colors.ENDC)
+            print(Colors.PURPLE + "6. Görsel Raporlar" + Colors.ENDC)
+            print(Colors.CYAN + "7. Portföy Optimizasyonu (Markowitz)" + Colors.ENDC) 
+            print("8. Çıkış")
             
             choice = input("\nSeçiminiz: ").strip()
             
-            if choice == '1':
-                self.show_portfolio()
-            elif choice == '2':
-                self.trade_flow(side="BUY")
-            elif choice == '3':
-                self.trade_flow(side="SELL")
-            elif choice == '4':
-                self.ai_analysis_menu()
+            if choice == '1': self.show_portfolio()
+            elif choice == '2': self.trade_flow(side="BUY")
+            elif choice == '3': self.trade_flow(side="SELL")
+            elif choice == '4': self.ai_analysis_menu()
             elif choice == '5':
-                 print("Tüm hisseler güncelleniyor...")
+                 print("Güncelleniyor...")
                  self.market_service.update_all_tickers()
-                 input("\nTamamlandı. Enter...")
-            elif choice == '6':
-                self.visualization_menu()
-            elif choice == '7':
-                print("Çıkış yapılıyor...")
+                 input("Bitti.")
+            elif choice == '6': self.visualization_menu()
+            elif choice == '7': self.optimization_menu() 
+            elif choice == '8':
+                print("Çıkış...")
                 break
-            else:
-                pass
