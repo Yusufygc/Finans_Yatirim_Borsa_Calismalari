@@ -30,16 +30,21 @@ class ConsoleMenu:
         from src.services.trade_engine import TradeService
         from src.services.market_data import MarketDataService
         from src.services.analysis_service import AnalysisService
-        from src.services.portfolio_analytics import PortfolioAnalyticsService  # <-- YENİ
+        from src.services.portfolio_analytics import PortfolioAnalyticsService  
         from src.services.visualization import PortfolioVisualizationService
         from src.services.optimization import PortfolioOptimizer
+
+        from src.planning.budget_manager import BudgetManager
+        from src.planning.goal_tracker import GoalTracker
         
         self.trade_service = TradeService(self.db)
         self.market_service = MarketDataService(self.db)
         self.analysis_service = AnalysisService(self.db)
-        self.analytics_service = PortfolioAnalyticsService(self.db) # <-- YENİ
+        self.analytics_service = PortfolioAnalyticsService(self.db) 
         self.viz_service = PortfolioVisualizationService(self.db)
         self.optimizer = PortfolioOptimizer(self.db)
+        self.budget_manager = BudgetManager(self.db)
+        self.goal_tracker = GoalTracker(self.db)
 
     def clear_screen(self):
         os.system('cls' if os.name == 'nt' else 'clear')
@@ -62,21 +67,42 @@ class ConsoleMenu:
         return val
 
     def get_valid_number(self, prompt, allow_empty=False, default_val=None):
+        """
+        Kullanıcıdan sayısal giriş alır. 
+        Virgül/Nokta dönüşümünü, boşluk temizliğini ve para birimi sembollerini yönetir.
+        """
         while True:
             val = self.get_input(prompt)
+            
+            # 1. Kullanıcı İptal Etti mi? ('q' tuşuna bastıysa None döner)
             if val is None: return None
             
+            # 2. Boş Bırakmaya İzin Var mı?
             if allow_empty and val == "":
                 return default_val
 
+            # --- GELİŞMİŞ TEMİZLİK ---
+            # Kullanıcı "1.500 TL" veya " 10,5 " girmiş olabilir.
+            
+            # a) Önce sağ/sol boşlukları ve yaygın para birimlerini sil
+            clean_val = val.upper().replace("TL", "").replace("$", "").replace("€", "").strip()
+            
+            # b) Virgülü noktaya çevir (Python formatı)
+            clean_val = clean_val.replace(',', '.')
+            
             try:
-                num = float(val.replace(',', '.'))
-                if num <= 0:
-                    print(Colors.FAIL + "  -> Lütfen 0'dan büyük bir değer giriniz." + Colors.ENDC)
+                num = float(clean_val)
+                
+                # c) Negatif sayı kontrolü
+                if num < 0:
+                    print(Colors.FAIL + "  -> Lütfen pozitif bir değer giriniz." + Colors.ENDC)
                     continue
+                
                 return num
+                
             except ValueError:
-                print(Colors.FAIL + "  -> Hatalı format! Sayısal değer giriniz." + Colors.ENDC)
+                print(Colors.FAIL + f"  -> Hatalı giriş: '{val}' sayısal bir değer değil." + Colors.ENDC)
+                print("     (Örnek doğru kullanımlar: 10.5 veya 10,5 veya 1000)")
 
     def check_market_status(self):
         """
@@ -434,6 +460,155 @@ class ConsoleMenu:
         print("-" * 75)
         input("\nAna menüye dönmek için Enter...")
 
+    def planning_menu(self):
+        while True:
+            self.show_header()
+            print(Colors.BLUE + ">> FİNANSAL PLANLAMA & DANIŞMANLIK" + Colors.ENDC)
+            current_month = datetime.now().strftime("%Y-%m")
+            
+            print(f"1. Bütçe Durumu (Ay: {current_month})")
+            print("2. Gelir/Gider Girişi Yap")
+            print("3. Yeni Hedef Ekle (Araba, Ev vb.)")
+            print("4. Hedef Analizi (Simülasyon)")
+            print("q. Ana Menü")
+            
+            choice = input("\nSeçiminiz: ").strip()
+            
+            if choice == '1':
+                self._show_budget_status(current_month)
+            elif choice == '2':
+                self._input_budget_data(current_month)
+            elif choice == '3':
+                self._add_financial_goal()
+            elif choice == '4':
+                self._run_goal_simulation()
+            elif choice == 'q':
+                break
+
+    def _show_budget_status(self, month):
+        analysis = self.budget_manager.get_monthly_analysis(self.user_id, month)
+        print("\n" + "-"*50)
+        if not analysis:
+            print(Colors.WARNING + f"{month} dönemi için henüz veri girişi yapılmamış." + Colors.ENDC)
+        else:
+            print(f"💰 TOPLAM GELİR : {analysis['total_income']:,.2f} TL")
+            print(f"💸 TOPLAM GİDER : {analysis['total_expense']:,.2f} TL")
+            print("-" * 30)
+            
+            pot_color = Colors.GREEN if analysis['net_potential'] > 0 else Colors.FAIL
+            print(f"💎 TASARRUF GÜCÜ: {pot_color}{analysis['net_potential']:,.2f} TL{Colors.ENDC}")
+            print(f"🎯 Hedeflenen   : {analysis['target']:,.2f} TL")
+            print(f"\n{Colors.BOLD}DANIŞMAN YORUMU:{Colors.ENDC}")
+            print(f"{analysis['message']}")
+        print("-"*50)
+        input("Devam...")
+
+    def _input_budget_data(self, month):
+        print(f"\n{Colors.CYAN}>> {month} Bütçe Verisi Girişi{Colors.ENDC}")
+        print("(Değiştirmek istemediğiniz alanları boş geçip Enter'a basın)")
+        print(Colors.WARNING + "(İptal etmek için 'q' yazın)" + Colors.ENDC)
+        
+        # Helper ile sayısal validasyon zaten yapılıyor
+        salary = self.get_valid_number("Maaş Geliri: ", allow_empty=True)
+        if salary is None and salary != 0: return # Kullanıcı 'q' yaptıysa çık
+
+        extra = self.get_valid_number("Ek Gelirler: ", allow_empty=True)
+        rent = self.get_valid_number("Kira/Konut Gideri: ", allow_empty=True)
+        bills = self.get_valid_number("Faturalar: ", allow_empty=True)
+        food = self.get_valid_number("Mutfak/Market: ", allow_empty=True)
+        trans = self.get_valid_number("Ulaşım/Benzin: ", allow_empty=True)
+        lux = self.get_valid_number("Eğlence/Lüks: ", allow_empty=True)
+        
+        target = self.get_valid_number("Bu ay ne kadar biriktirmek istiyorsun?: ", allow_empty=True)
+
+        data = {}
+        # Veri paketleme (Aynı kalıyor)
+        if salary is not None: data["income_salary"] = salary
+        if extra is not None: data["income_additional"] = extra
+        if rent is not None: data["expense_rent"] = rent
+        if bills is not None: data["expense_bills"] = bills
+        if food is not None: data["expense_food"] = food
+        if trans is not None: data["expense_transport"] = trans
+        if lux is not None: data["expense_luxury"] = lux
+        if target is not None: data["savings_target"] = target
+        
+        if data:
+            # --- GÜNCELLEME BURADA: TRY-EXCEPT BLOĞU ---
+            try:
+                self.budget_manager.set_budget(self.user_id, month, data)
+                print(Colors.GREEN + "✅ Bütçe başarıyla güncellendi!" + Colors.ENDC)
+            except Exception as e:
+                print(Colors.FAIL + f"\n[HATA] Kayıt sırasında bir sorun oluştu: {str(e)}" + Colors.ENDC)
+                print("Lütfen tekrar deneyiniz.")
+            # -------------------------------------------
+        else:
+            print("Değişiklik yapılmadı.")
+        sleep(1)
+
+    def _add_financial_goal(self):
+        print(f"\n{Colors.CYAN}>> Yeni Hayal/Hedef Tanımla{Colors.ENDC}")
+        print(Colors.WARNING + "(İptal etmek için 'q' yazın)" + Colors.ENDC)
+        
+        # 1. Hedef Adı
+        name = self.get_input("Hedef Adı (Örn: Araba, Tatil): ")
+        if not name: return
+        
+        # 2. Tutar (Artık virgül/TL yazsa da kabul eder)
+        amount = self.get_valid_number("Hedeflenen Tutar (TL): ")
+        if amount is None: return # Kullanıcı q bastıysa çık
+        
+        # 3. Tarih (Döngüsel Validasyonlu)
+        deadline = None
+        while True:
+            date_str = self.get_input("Hedef Tarih (YYYY-AA-GG): ")
+            if date_str is None: return
+            
+            try:
+                parsed_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+                if parsed_date <= date.today():
+                    print(Colors.FAIL + "  -> Hata: Hedef tarih gelecekte olmalıdır." + Colors.ENDC)
+                    continue
+                deadline = parsed_date
+                break
+            except ValueError:
+                print(Colors.FAIL + "  -> Hatalı tarih formatı! (Örn: 2026-08-30)" + Colors.ENDC)
+        
+        # 4. Kayıt (Hata Korumalı)
+        try:
+            self.goal_tracker.add_goal(self.user_id, name, amount, deadline)
+            print(Colors.GREEN + f"✅ '{name}' hedefinize başarıyla eklendi! Yolunuz açık olsun." + Colors.ENDC)
+        except Exception as e:
+            print(Colors.FAIL + f"\n[HATA] Kayıt yapılamadı: {e}" + Colors.ENDC)
+        
+        input("Devam...")
+
+    def _run_goal_simulation(self):
+        print(f"\n{Colors.CYAN}>> Hedef Fizibilite Analizi{Colors.ENDC}")
+        print("Finansal durumunuz ve hedefleriniz karşılaştırılıyor...\n")
+        
+        result = self.goal_tracker.analyze_feasibility(self.user_id)
+        
+        if "message" in result and "status" not in result: # Hata veya boş durum
+            print(result["message"])
+        elif result.get("status") == "CRITICAL":
+            print(Colors.FAIL + f"[KRİTİK] {result['message']}" + Colors.ENDC)
+        else:
+            print(f"Aylık Tasarruf Gücünüz: {Colors.BOLD}{result['monthly_power']:,.2f} TL{Colors.ENDC}")
+            print(f"Hedefler İçin Gereken : {result['total_monthly_need']:,.2f} TL")
+            
+            gen_color = Colors.GREEN if result['status'] == "BAŞARILI" else Colors.FAIL
+            print(f"Genel Durum: {gen_color}{result['status']}{Colors.ENDC}\n")
+            
+            print(f"{'HEDEF':<15} {'KALAN (TL)':<15} {'AY':<5} {'AYLIK GEREKEN':<15} {'DURUM'}")
+            print("-" * 65)
+            for item in result['details']:
+                rem = item['target'] - item['saved']
+                st_color = Colors.GREEN if item['status'] == "YETİŞİR" else Colors.FAIL
+                print(f"{item['goal']:<15} {rem:<15,.0f} {item['months_left']:<5} {item['required_monthly']:<15,.0f} {st_color}{item['status']}{Colors.ENDC}")
+                
+        input("\nDevam...")
+
+    # --- ANA DÖNGÜ ---
     def main_loop(self):
         while True:
             self.show_header()
@@ -443,9 +618,9 @@ class ConsoleMenu:
             print(Colors.TEAL+ "4. AI Analiz (Tahmin)" + Colors.ENDC)
             print(Colors.BLUE + "5. Piyasa Verilerini Güncelle" + Colors.ENDC)
             print(Colors.PURPLE + "6. Görsel Raporlar" + Colors.ENDC)
-            print(Colors.CYAN + "7. Portföy Optimizasyonu (Markowitz)" + Colors.ENDC) 
-            print("8. Çıkış")
-            
+            print(Colors.ORANGE + "7. Portföy Optimizasyonu" + Colors.ENDC)
+            print(Colors.GREEN + "8. Finansal Planlama (Bütçe & Hedefler)" + Colors.ENDC) 
+            print("9. Çıkış")
             choice = input("\nSeçiminiz: ").strip()
             
             if choice == '1': self.show_portfolio()
@@ -458,6 +633,7 @@ class ConsoleMenu:
                  input("Bitti.")
             elif choice == '6': self.visualization_menu()
             elif choice == '7': self.optimization_menu() 
-            elif choice == '8':
+            elif choice == '8': self.planning_menu() 
+            elif choice == '9':
                 print("Çıkış...")
                 break
