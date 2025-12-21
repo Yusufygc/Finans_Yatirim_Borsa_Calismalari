@@ -178,20 +178,30 @@ class PortfolioAnalyticsService:
         return allocation
 
     def _calculate_extremes(self, holdings):
-        """En İyi ve En Kötü Performanslar (Etiket Kontrollü)"""
-        # Kar/Zarar Yüzdesine göre sırala
+        """En İyi ve En Kötü Performanslar (Tek hisse kontrolü eklendi)"""
+        if not holdings:
+            return None
+            
+        # --- YENİ KONTROL: TEK HİSSE VARSA ---
+        if len(holdings) == 1:
+            item = holdings[0]
+            pl_pct = ((item["current_price"] - item["avg_cost"]) / item["avg_cost"]) * 100
+            return {
+                "is_single": True, # Bu bayrak (flag) UI'ı uyaracak
+                "symbol": item["symbol"],
+                "pl_pct": pl_pct
+            }
+        # -------------------------------------
+
+        # Kar/Zarar Yüzdesine göre sırala (Çoklu hisse durumu)
         sorted_holdings = sorted(holdings, key=lambda x: (x["current_price"] - x["avg_cost"]) / x["avg_cost"], reverse=True)
         
-        if not sorted_holdings:
-            return None
-
         best = sorted_holdings[0]
         worst = sorted_holdings[-1]
         
         # En kötü performansın yüzdesini hesapla
         worst_pl_pct = ((worst["current_price"] - worst["avg_cost"]) / worst["avg_cost"]) * 100
         
-        # --- DÜZELTME: EĞER ZARAR YOKSA ETİKETİ DEĞİŞTİR ---
         if worst_pl_pct >= 0:
             worst_label = "En Az Getiri"
             is_loss = False
@@ -204,8 +214,9 @@ class PortfolioAnalyticsService:
             return f"{item['symbol']} (%{pl_pct:.2f})"
 
         return {
+            "is_single": False, # Çoklu hisse var
             "best_performer": format_stats(best),
             "worst_performer": format_stats(worst),
-            "worst_label": worst_label, # Dinamik Etiket
-            "worst_is_loss": is_loss    # Renklendirme için bayrak
+            "worst_label": worst_label,
+            "worst_is_loss": is_loss
         }

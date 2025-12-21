@@ -1,5 +1,5 @@
 import yfinance as yf
-from datetime import date
+from datetime import date, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 from src.data.models import Security, PriceHistory
@@ -140,3 +140,48 @@ class MarketDataService:
             self.update_price_history(sec.symbol)
             
         print("--- Güncelleme Tamamlandı ---\n")
+
+    def get_first_trade_date(self, symbol: str):
+        """
+        Hissenin borsada işlem görmeye başladığı (veya verinin olduğu) ilk tarihi bulur.
+        """
+        try:
+            # yfinance'dan 'max' geçmişi isteyip ilk indexi alıyoruz
+            ticker = yf.Ticker(f"{symbol}.IS")
+            # Sadece metadata değil, history'den bakmak en garantisi
+            hist = ticker.history(period="max")
+            
+            if hist.empty:
+                return None
+            
+            first_date = hist.index[0].date()
+            return first_date
+        except Exception:
+            return None
+
+    def validate_symbol_date(self, symbol: str, target_date: date):
+        """
+        Girilen tarihte hissenin verisi var mı kontrol eder.
+        Geriye (isValid: bool, message: str) döner.
+        """
+        try:
+            # Hedef tarihten sonraki 5 güne bak (Hafta sonuna denk geldiyse diye)
+            start_date = target_date
+            end_date = target_date + timedelta(days=5)
+            
+            ticker = yf.Ticker(f"{symbol}.IS")
+            hist = ticker.history(start=start_date, end=end_date)
+            
+            # Eğer o aralıkta hiç veri yoksa, o tarihte hisse yok demektir.
+            if hist.empty:
+                # O zaman ilk işlem tarihini bulup kullanıcıya önerelim
+                first_date = self.get_first_trade_date(symbol)
+                if first_date:
+                    return False, f"Bu tarihte işlem verisi bulunamadı. {symbol} için en eski veri tarihi: {first_date}"
+                else:
+                    return False, "Bu sembol için geçmiş veri bulunamıyor."
+            
+            return True, "OK"
+            
+        except Exception as e:
+            return False, f"Tarih kontrolü yapılamadı: {str(e)}"

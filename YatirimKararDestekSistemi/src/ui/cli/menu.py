@@ -3,6 +3,8 @@ import os
 from time import sleep
 from datetime import datetime, time, date
 
+from scipy import stats
+
 # Konsol Renkleri
 class Colors:
     HEADER = '\033[95m'
@@ -66,58 +68,78 @@ class ConsoleMenu:
             return None
         return val
 
-    def get_valid_number(self, prompt, allow_empty=False, default_val=None):
+    def get_valid_number(self, prompt, allow_empty=False, default_val=None, is_integer=False):
         """
-        Kullanıcıdan sayısal giriş alır. 
-        Virgül/Nokta dönüşümünü, boşluk temizliğini ve para birimi sembollerini yönetir.
+        Kullanıcıdan sayısal giriş alır.
+        - is_integer=True ise sadece TAM SAYI kabul eder (Lot adedi vb.)
+        - Binlik ayraçları (1.000.000 veya 1,000,000) temizler.
+        - Ondalık ayracı olarak hem nokta (.) hem virgül (,) destekler.
         """
         while True:
             val = self.get_input(prompt)
             
-            # 1. Kullanıcı İptal Etti mi? ('q' tuşuna bastıysa None döner)
+            # 1. İptal Kontrolü
             if val is None: return None
             
-            # 2. Boş Bırakmaya İzin Var mı?
+            # 2. Boş Giriş Kontrolü
             if allow_empty and val == "":
                 return default_val
 
-            # --- GELİŞMİŞ TEMİZLİK ---
-            # Kullanıcı "1.500 TL" veya " 10,5 " girmiş olabilir.
-            
-            # a) Önce sağ/sol boşlukları ve yaygın para birimlerini sil
+            # --- GİRİŞ TEMİZLEME MOTORU ---
+            # Önce para birimi ve boşlukları temizle
             clean_val = val.upper().replace("TL", "").replace("$", "").replace("€", "").strip()
             
-            # b) Virgülü noktaya çevir (Python formatı)
-            clean_val = clean_val.replace(',', '.')
+            # SENARYO A: Binlik ayracı olarak NOKTA kullanılmış (Örn: 1.500.000)
+            # Eğer string içinde birden fazla nokta varsa veya sonda değilse, bunlar binlik ayracıdır.
+            if clean_val.count('.') > 1 or ('.' in clean_val and ',' in clean_val):
+                # Tüm noktaları sil (1.500.000 -> 1500000)
+                clean_val = clean_val.replace('.', '')
+                # Virgül varsa noktaya çevir (15000,50 -> 15000.50)
+                clean_val = clean_val.replace(',', '.')
             
+            # SENARYO B: Binlik ayracı olarak VİRGÜL kullanılmış (Örn: 1,500,000)
+            elif clean_val.count(',') > 1:
+                clean_val = clean_val.replace(',', '')
+            
+            # SENARYO C: Standart ondalık (10,5 -> 10.5)
+            else:
+                clean_val = clean_val.replace(',', '.')
+
             try:
+                # Sayıya çevirmeyi dene
                 num = float(clean_val)
                 
-                # c) Negatif sayı kontrolü
+                # Negatif kontrolü
                 if num < 0:
                     print(Colors.FAIL + "  -> Lütfen pozitif bir değer giriniz." + Colors.ENDC)
                     continue
+
+                # --- TAM SAYI (INTEGER) KONTROLÜ ---
+                if is_integer:
+                    if not num.is_integer():
+                        print(Colors.FAIL + f"  -> Hata: '{val}' geçerli bir tam sayı değil. Kesirli hisse alınamaz." + Colors.ENDC)
+                        continue
+                    return int(num)
                 
                 return num
-                
-            except ValueError:
-                print(Colors.FAIL + f"  -> Hatalı giriş: '{val}' sayısal bir değer değil." + Colors.ENDC)
-                print("     (Örnek doğru kullanımlar: 10.5 veya 10,5 veya 1000)")
 
-    def check_market_status(self):
+            except ValueError:
+                print(Colors.FAIL + f"  -> Hatalı giriş: '{val}' sayısal bir değer olarak anlaşılamadı." + Colors.ENDC)
+                print("     (Örnek: 1500 veya 1.500.000 veya 10,50)")
+
+# 1. Fonksiyon artık 'side' parametresi de alıyor
+    def check_market_status(self, symbol=None, side=None):
         """
         Piyasa kontrolü yapar. 
-        Geçmiş tarih girilirse Hafta Sonu ve Gelecek Tarih kontrolü de yapar.
+        Geçmiş tarih girilirse: Hafta Sonu, Gelecek Tarih, HİSSE VARLIK ve TARİHSEL BAKİYE kontrolü yapar.
         """
         now = datetime.now()
         is_weekend = now.weekday() >= 5 
-        
         current_time = now.time()
         market_open = time(10, 0)
         market_close = time(18, 5) 
         is_off_hours = not (market_open <= current_time <= market_close)
 
-        # Eğer şu an piyasa kapalıysa veya hafta sonuysa
         if is_weekend or is_off_hours:
             print(Colors.FAIL + "\n[UYARI] Şu an piyasalar KAPALI." + Colors.ENDC)
             
@@ -131,29 +153,45 @@ class ConsoleMenu:
                         if date_str is None: return "CANCEL"
                         try:
                             custom_date = datetime.strptime(date_str, "%Y-%m-%d")
-                            
-                            # KONTROL 1: GELECEK TARİH ENGELLİ
-                            if custom_date.date() > date.today():
+                            c_date_obj = custom_date.date()
+
+                            # A. Gelecek Tarih Kontrolü
+                            if c_date_obj > date.today():
                                 print(Colors.FAIL + "  -> Hata: Geleceğe işlem giremezsiniz!" + Colors.ENDC)
                                 continue
 
-                            # KONTROL 2: HAFTA SONU ENGELLİ
-                            # weekday(): 0=Pzt ... 5=Cmt, 6=Paz
+                            # B. Hafta Sonu Kontrolü
                             if custom_date.weekday() >= 5:
                                 day_name = "Cumartesi" if custom_date.weekday() == 5 else "Pazar"
-                                print(Colors.FAIL + f"  -> Hata: {day_name} günü borsa kapalıdır. İşlem girilemez." + Colors.ENDC)
+                                print(Colors.FAIL + f"  -> Hata: {day_name} günü borsa kapalıdır." + Colors.ENDC)
                                 continue
-                            
+
+                            # C. ŞİRKET TARİHÇESİ KONTROLÜ
+                            if symbol:
+                                print("  -> Tarihsel veri kontrol ediliyor...", end="\r")
+                                is_valid, msg = self.market_service.validate_symbol_date(symbol, c_date_obj)
+                                print(" " * 60, end="\r") # Satırı temizle
+
+                                if not is_valid:
+                                    print(Colors.FAIL + f"  -> Hata: {msg}" + Colors.ENDC)
+                                    continue
+
+                                # --- D. TARİHSEL BAKİYE KONTROLÜ (YENİ) ---
+                                # Eğer işlem SATIŞ ise ve o tarihte elde 0 adet varsa, devam etme.
+                                if side == "SELL":
+                                    hist_bal = self.trade_service.get_historical_balance(self.user_id, symbol, custom_date)
+                                    if hist_bal <= 0:
+                                        print(Colors.FAIL + f"  -> Hata: {c_date_obj} tarihinde elinizde hiç {symbol} yoktu. Satış yapılamaz." + Colors.ENDC)
+                                        continue
+                                # ------------------------------------------
+
                             return custom_date
 
                         except ValueError:
-                            print(Colors.FAIL + "  -> Hatalı tarih formatı! YYYY-AA-GG (Örn: 2023-12-25)" + Colors.ENDC)
+                            print(Colors.FAIL + "  -> Hatalı tarih formatı! YYYY-AA-GG" + Colors.ENDC)
                 
                 elif choice.upper() == 'H':
                     return "CANCEL"
-                else:
-                    print("Lütfen 'E' veya 'H' giriniz.")
-        
         return None
     
     def print_mini_portfolio(self):
@@ -210,14 +248,25 @@ class ConsoleMenu:
 
         # 2. EN İYİ / EN KÖTÜ (Güncellendi)
         if stats:
-            # Servisten gelen etiketi ve durumu al
-            w_label = stats.get("worst_label", "Kaybettiren")
-            w_is_loss = stats.get("worst_is_loss", True)
+            # SENARYO A: Sadece tek hisse var
+            if stats.get("is_single"):
+                sym = stats["symbol"]
+                pl = stats["pl_pct"]
+                
+                # Renk belirle
+                color = Colors.GREEN if pl >= 0 else Colors.FAIL
+                icon = "🚀" if pl >= 0 else "🔻"
+                
+                print(f"\n{icon} Tek Varlık Performansı: {Colors.BOLD}{sym}{Colors.ENDC} | Getiri: {color}%{pl:.2f}{Colors.ENDC}")
+                print(Colors.WARNING + "   (Kıyaslama yapmak için portföye en az 2 hisse ekleyin)" + Colors.ENDC)
             
-            # Eğer zararsa KIRMIZI, karsa (ama azsa) SARI renk kullan
-            w_color = Colors.FAIL if w_is_loss else Colors.WARNING
-            
-            print(f"\n🏆 Şampiyon: {Colors.GREEN}{stats['best_performer']}{Colors.ENDC} | 📉 {w_label}: {w_color}{stats['worst_performer']}{Colors.ENDC}")
+            # SENARYO B: Birden fazla hisse var (Normal Akış)
+            else:
+                w_label = stats.get("worst_label", "Kaybettiren")
+                w_is_loss = stats.get("worst_is_loss", True)
+                w_color = Colors.FAIL if w_is_loss else Colors.WARNING
+                
+                print(f"\n🏆 Şampiyon: {Colors.GREEN}{stats['best_performer']}{Colors.ENDC} | 📉 {w_label}: {w_color}{stats['worst_performer']}{Colors.ENDC}")
         
         # 3. VARLIK DAĞILIMI
         print(f"\n{Colors.CYAN}[VARLIK DAĞILIMI]{Colors.ENDC}")
@@ -282,13 +331,13 @@ class ConsoleMenu:
                 print(Colors.FAIL + f"❌ '{symbol}' bulunamadı. Tekrar deneyin." + Colors.ENDC)
 
         # --- TARİH KONTROLÜ ---
-        trade_date = self.check_market_status()
+        trade_date = self.check_market_status(symbol=symbol, side=side)
         if trade_date == "CANCEL": return
 
         # --- ADET DÖNGÜSÜ (Stok Kontrollü) ---
         while True:
-            qty = self.get_valid_number("Adet: ")
-            if qty is None: return 
+            qty = self.get_valid_number("Adet (Tam Sayı): ", is_integer=True) 
+            if qty is None: return
             
             # KONTROL 2: Satış miktar kontrolü
             if side == "SELL":
