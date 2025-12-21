@@ -8,9 +8,9 @@ from src.data.models import Security, PriceHistory, AiPrediction, PortfolioHoldi
 # AI Core Modüllerini Dahil Ediyoruz
 # Not: ai_core içindeki sınıfları doğrudan kullanıyoruz (Pipeline dosyasını bypass ediyoruz)
 try:
-    from src.ai_core.feature_engineering import FeatureEngineer
-    from src.ai_core.model_price_prediction import HybridModel
-    from src.ai_core.risk_profile import RiskManager
+    from src.ESKI_ai.feature_engineering import FeatureEngineer
+    from src.ESKI_ai.model_price_prediction import HybridModel
+    from src.ESKI_ai.risk_profile import RiskManager
 except ImportError:
     print("[UYARI] AI Core modülleri bulunamadı. Analiz servisi sınırlı çalışacak.")
 
