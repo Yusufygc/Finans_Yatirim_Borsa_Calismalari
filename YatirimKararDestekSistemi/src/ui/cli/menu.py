@@ -295,91 +295,107 @@ class ConsoleMenu:
         input("\nAna menüye dönmek için Enter...")
 
     def trade_flow(self, side="BUY"):
-        """Alım ve Satım akışı - Gelişmiş Validasyonlu"""
         self.show_header()
         action_name = "ALIM" if side == "BUY" else "SATIŞ"
-        print(Colors.BLUE + f">> HİSSE {action_name} İŞLEMİ" + Colors.ENDC)
-        print(Colors.WARNING + "(Ana menüye dönmek için 'q' yazın)" + Colors.ENDC)
-
-        # 1. Portföyü Göster ve Sahip Olunanları Al
+        print(Colors.BLUE + f">> HİSSE {action_name} SİHİRBAZI" + Colors.ENDC)
+        
         owned_stocks = self.print_mini_portfolio()
 
-        valid_ticker_info = None
-        symbol = ""
-        
-        # --- SEMBOL DÖNGÜSÜ ---
+        # --- DIŞ DÖNGÜ: HİSSE SEÇİMİ ---
         while True:
-            symbol = self.get_input("Hisse Sembolü (Örn: ASELS): ")
-            if not symbol: return 
+            # 1. HİSSE SEMBOLÜ ALMA
+            ticker_info = None
+            symbol = ""
+            
+            while True:
+                symbol = self.get_input("Sembol (Çıkış için 'q'): ")
+                if not symbol: return # Ana menüye dön
+                
+                symbol = symbol.upper()
+                
+                # Satış yapıyorsa ve elinde yoksa uyar
+                if side == "SELL" and symbol not in owned_stocks:
+                    print(Colors.FAIL + "❌ Bu hisse portföyünüzde yok!" + Colors.ENDC)
+                    continue
+                
+                # Hisse bilgilerini getir
+                ticker_info = self.market_service.get_ticker_info(symbol)
+                if ticker_info: 
+                    break # Sembol geçerli, detaylara geç
+                print("⚠️ Sembol bulunamadı, tekrar deneyin.")
 
-            symbol = symbol.upper()
-            
-            # KONTROL 1: Satış yapılacaksa, hisse elde var mı?
-            if side == "SELL" and symbol not in owned_stocks:
-                print(Colors.FAIL + f"❌ HATA: Portföyünüzde '{symbol}' hissesi bulunmuyor. Satış yapılamaz." + Colors.ENDC)
-                continue # Tekrar sembol sor
-            
-            print("Kontrol ediliyor...", end="\r")
-            ticker_info = self.market_service.get_ticker_info(symbol)
-            
-            if ticker_info:
-                valid_ticker_info = ticker_info
+            # --- İÇ DÖNGÜ: İŞLEM DETAYLARI (DÜZELTME İÇİN BURAYA DÖNÜLÜR) ---
+            while True:
+                print(f"\n{Colors.CYAN}--- {symbol} İşlem Detayları ---{Colors.ENDC}")
+                
+                # 2. TARİH VE BAKİYE KONTROLÜ
+                # side parametresini gönderiyoruz ki satışta bakiye kontrolü yapsın
+                trade_date = self.check_market_status(symbol=symbol, side=side)
+                if trade_date == "CANCEL": 
+                    break # Dış döngüye (Hisse seçimine) atar ama biz return isteyebiliriz.
+                          # Kullanıcı deneyimi için burada 'break' diyip hisse seçimine dönmek daha mantıklı.
+                
+                # 3. ADET GİRİŞİ (Tam Sayı Kontrollü)
+                qty = self.get_valid_number("Adet (Tam Sayı): ", is_integer=True)
+                if qty is None: break # İptal edilirse hisse seçimine dön
+                
+                if side == "SELL":
+                    # Anlık portföy kontrolü (Snapshot)
+                    # Not: Tarihsel kontrolü zaten check_market_status içinde yaptık.
+                    if qty > owned_stocks.get(symbol, 0):
+                        print(Colors.FAIL + f"❌ Yetersiz Bakiye! Mevcut: {owned_stocks.get(symbol, 0)}" + Colors.ENDC)
+                        continue # Tekrar adet sor (Döngü başa sarar)
+
+                # 4. FİYAT GİRİŞİ
                 current_price = ticker_info['close']
-                print(Colors.GREEN + f"✅ {symbol} Bulundu: {current_price:.2f} TL ({ticker_info['date']})" + Colors.ENDC)
-                break 
-            else:
-                print(Colors.FAIL + f"❌ '{symbol}' bulunamadı. Tekrar deneyin." + Colors.ENDC)
+                print(f"Güncel Piyasa Fiyatı: {Colors.BOLD}{current_price:.2f} TL{Colors.ENDC}")
+                price = self.get_valid_number("İşlem Fiyatı: ", allow_empty=True, default_val=current_price)
+                if price is None: break
 
-        # --- TARİH KONTROLÜ ---
-        trade_date = self.check_market_status(symbol=symbol, side=side)
-        if trade_date == "CANCEL": return
-
-        # --- ADET DÖNGÜSÜ (Stok Kontrollü) ---
-        while True:
-            qty = self.get_valid_number("Adet (Tam Sayı): ", is_integer=True) 
-            if qty is None: return
-            
-            # KONTROL 2: Satış miktar kontrolü
-            if side == "SELL":
-                owned_qty = owned_stocks[symbol]
-                if qty > owned_qty:
-                    print(Colors.FAIL + f"❌ HATA: Yetersiz bakiye! Mevcut: {owned_qty}, Satılmak istenen: {qty}" + Colors.ENDC)
-                    continue # Tekrar adet sor
-            
-            break # Sorun yoksa döngüden çık
-
-        # 4. Fiyat Girişi
-        current_price = valid_ticker_info['close']
-        default_price_str = f" ({current_price:.2f})"
-        
-        price = self.get_valid_number(
-            f"İşlem Fiyatı{default_price_str}: ", 
-            allow_empty=True, 
-            default_val=current_price
-        )
-        if price is None: return
-
-        print(Colors.WARNING + f"\nÖZET: {symbol} - {qty} Adet x {price} TL" + Colors.ENDC)
-        if trade_date:
-            print(f"Tarih: {trade_date.strftime('%Y-%m-%d')}")
-        
-        confirm = self.get_input("Onaylıyor musunuz? (E/H): ")
-        if not confirm or confirm.upper() != 'E': return
-
-        if side == "BUY":
-            result = self.trade_service.execute_buy(self.user_id, symbol, qty, price, custom_date=trade_date)
-        else:
-            result = self.trade_service.execute_sell(self.user_id, symbol, qty, price, custom_date=trade_date)
-
-        if result["status"] == "success":
-            print(Colors.GREEN + f"\n[BAŞARILI] {result['message']}" + Colors.ENDC)
-            if not trade_date:
-                print(f"[SİSTEM] {symbol} verileri güncelleniyor...")
-                self.market_service.update_price_history(symbol)
-        else:
-            print(Colors.FAIL + f"\n[HATA] {result['message']}" + Colors.ENDC)
-        
-        input("\nDevam etmek için Enter...")
+                # 5. ÖZET VE ONAY
+                total_val = qty * price
+                print("\n" + Colors.WARNING + "--- İŞLEM ÖZETİ ---" + Colors.ENDC)
+                print(f"Hisse   : {symbol}")
+                print(f"İşlem   : {action_name}")
+                print(f"Tarih   : {trade_date.strftime('%Y-%m-%d') if trade_date else 'BUGÜN'}")
+                print(f"Miktar  : {qty} Lot")
+                print(f"Birim F : {price:.2f} TL")
+                print(f"Toplam  : {Colors.BOLD}{total_val:,.2f} TL{Colors.ENDC}")
+                
+                confirm = self.get_input("\nOnaylıyor musunuz? (E/H): ")
+                
+                if confirm and confirm.upper() == 'E':
+                    # İŞLEMİ GERÇEKLEŞTİR
+                    if side == "BUY": 
+                        res = self.trade_service.execute_buy(self.user_id, symbol, qty, price, trade_date)
+                    else: 
+                        res = self.trade_service.execute_sell(self.user_id, symbol, qty, price, trade_date)
+                    
+                    if res["status"] == "success":
+                        print(Colors.GREEN + f"\n✅ {res['message']}" + Colors.ENDC)
+                        if not trade_date: self.market_service.update_price_history(symbol)
+                    else:
+                        print(Colors.FAIL + f"\n❌ {res['message']}" + Colors.ENDC)
+                    
+                    input("Devam etmek için Enter...")
+                    return # Ana menüye dön
+                
+                else:
+                    # --- KULLANICI 'HAYIR' DEDİ, NE YAPALIM? ---
+                    print(Colors.FAIL + "\n❌ İşlem iptal edildi." + Colors.ENDC)
+                    print("Ne yapmak istersiniz?")
+                    print("1. İşlemi Düzenle (Adet/Fiyat/Tarih)")
+                    print("2. Yeni İşlem (Farklı Hisse)")
+                    print("3. Ana Menüye Dön")
+                    
+                    sub_choice = input("Seçiminiz: ").strip()
+                    
+                    if sub_choice == '1':
+                        continue # İç döngünün başına dön (Tarih sorusuna)
+                    elif sub_choice == '2':
+                        break # İç döngüden çık, Dış döngüye (Hisse sormaya) git
+                    else:
+                        return # Fonksiyondan çık (Ana menü)
 
     def ai_analysis_menu(self):
         self.show_header()
