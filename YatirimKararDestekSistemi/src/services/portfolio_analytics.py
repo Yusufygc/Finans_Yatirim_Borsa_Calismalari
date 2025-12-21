@@ -12,27 +12,67 @@ class PortfolioAnalyticsService:
     def __init__(self, db: Session):
         self.db = db
 
-    def generate_dashboard(self, user_id: int):
-        """
-        Tüm analizleri tek bir çatı altında toplayan ana fonksiyon.
-        """
-        # 1. Temel Veriler
-        holdings = self._get_active_holdings(user_id)
+    def generate_dashboard(self, user_id):
+        # 1. Portföy verilerini çek
+        holdings = self.db.query(PortfolioHolding).filter(PortfolioHolding.user_id == user_id).all()
         if not holdings:
             return {"error": "Portföy boş."}
 
-        # 2. Analiz Modülleri
-        period_returns = self._calculate_period_returns(holdings)
-        lot_analysis = self._analyze_lots(user_id, holdings)
-        weights = self._calculate_weights(holdings)
-        stats = self._calculate_extremes(holdings)
+        total_current_value = 0.0
+        total_cost_basis = 0.0
+        positions = []
+
+        # 2. Her hisse için hesaplama yap
+        for h in holdings:
+            # Güncel fiyatı al (MarketDataService üzerinden güncellenmiş olmalı)
+            # En son fiyatı bulmak için PriceHistory'e bakıyoruz
+            last_price_row = self.db.query(PriceHistory).filter(
+                PriceHistory.security_id == h.security_id
+            ).order_by(PriceHistory.date.desc()).first()
+            
+            current_price = float(last_price_row.close_price) if last_price_row else float(h.avg_cost)
+            
+            qty = float(h.quantity)
+            avg_cost = float(h.avg_cost)
+            
+            market_val = qty * current_price
+            cost_basis = qty * avg_cost
+            
+            # --- YENİ EKLENEN KISIM: NOMİNAL (TL) KAR/ZARAR ---
+            nominal_pl = market_val - cost_basis 
+            # --------------------------------------------------
+
+            pct_pl = ((current_price - avg_cost) / avg_cost) * 100 if avg_cost > 0 else 0.0
+            
+            total_current_value += market_val
+            total_cost_basis += cost_basis
+            
+            positions.append({
+                "symbol": h.security.symbol,
+                "quantity": qty,
+                "avg_cost": avg_cost,
+                "current_price": current_price,
+                "market_value": market_val,
+                "pct_pl": pct_pl,
+                "nominal_pl": nominal_pl # <-- Listeye ekledik
+            })
+
+        # 3. Genel Toplamlar
+        total_nominal_pl = total_current_value - total_cost_basis
+        total_pct_pl = (total_nominal_pl / total_cost_basis * 100) if total_cost_basis > 0 else 0.0
+
+        # ... (Ekstremler hesaplama kısmı aynı kalabilir) ...
+        extremes = self._calculate_extremes(positions)
 
         return {
-            "summary": period_returns["portfolio_summary"], # Genel Portföy Getirileri
-            "details": period_returns["asset_details"],     # Hisse Bazlı Dönemsel Getiriler
-            "lot_breakdown": lot_analysis,                  # Parçalı Alım Analizi
-            "allocation": weights,                          # Portföy Ağırlıkları
-            "performance_stats": stats                      # En İyi/En Kötü
+            "summary": {
+                "total_value": total_current_value,
+                "total_cost": total_cost_basis,
+                "total_pl_nominal": total_nominal_pl,
+                "total_pl_pct": total_pct_pl
+            },
+            "positions": positions,
+            "extremes": extremes
         }
 
     def _get_active_holdings(self, user_id):

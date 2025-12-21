@@ -219,79 +219,69 @@ class ConsoleMenu:
     def show_portfolio(self):
         self.show_header()
         print(Colors.BLUE + ">> DETAYLI PORTFÖY ANALİZİ" + Colors.ENDC)
+        print("Piyasa verileri güncelleniyor ve analiz yapılıyor...\n")
         
-        print("Piyasa verileri güncelleniyor ve analiz yapılıyor...")
         self.market_service.update_all_tickers() 
-
-        # Yeni Analytics Servisini Çağırıyoruz
         dashboard = self.analytics_service.generate_dashboard(self.user_id)
         
         if "error" in dashboard:
-            print(Colors.FAIL + f"\n[HATA] {dashboard['error']}" + Colors.ENDC)
-            input("\nDevam...")
+            print(Colors.WARNING + f"Bilgi: {dashboard['error']}" + Colors.ENDC)
+            input("Devam...")
             return
-
-        summ = dashboard["summary"]
-        stats = dashboard["performance_stats"]
-
-        # 1. ÖZET KART
-        print("\n" + Colors.HEADER + "┌" + "─"*68 + "┐" + Colors.ENDC)
-        print(f"{Colors.HEADER}│{Colors.ENDC} TOPLAM VARLIK: {Colors.BOLD}{summ['total_value']:>15,.2f} TL{Colors.ENDC} {Colors.HEADER}│{Colors.ENDC}")
         
-        # Renklendirme Fonksiyonu
-        def color_pct(val):
-            c = Colors.GREEN if val >= 0 else Colors.FAIL
-            return f"{c}%{val:.2f}{Colors.ENDC}"
+        summ = dashboard["summary"]
+        positions = dashboard["positions"]
+        stats = dashboard["extremes"]
 
-        print(f"{Colors.HEADER}│{Colors.ENDC} Günlük: {color_pct(summ['daily_return']):<15} Haftalık: {color_pct(summ['weekly_return']):<15} Aylık: {color_pct(summ['monthly_return']):<10} {Colors.HEADER}│{Colors.ENDC}")
-        print(Colors.HEADER + "└" + "─"*68 + "┘" + Colors.ENDC)
-
-        # 2. EN İYİ / EN KÖTÜ (Güncellendi)
+        # 1. ÖZET KART (GÜNCELLENDİ)
+        # Toplam kârı da hem % hem TL olarak gösterelim
+        total_pl_color = Colors.GREEN if summ['total_pl_nominal'] >= 0 else Colors.FAIL
+        print("┌" + "─"*70 + "┐")
+        print(f"│ TOPLAM VARLIK DEĞERİ : {Colors.BOLD}{summ['total_value']:,.2f} TL{Colors.ENDC}")
+        print(f"│ TOPLAM MALİYET       : {summ['total_cost']:,.2f} TL")
+        print(f"│ NET KAR/ZARAR        : {total_pl_color}%{summ['total_pl_pct']:.2f} ({summ['total_pl_nominal']:+,.2f} TL){Colors.ENDC}")
+        print("└" + "─"*70 + "┘")
+        
+        # 2. PERFORMANS ANALİZİ (Tek/Çoklu Hisse Kontrolü)
         if stats:
-            # SENARYO A: Sadece tek hisse var
             if stats.get("is_single"):
                 sym = stats["symbol"]
                 pl = stats["pl_pct"]
-                
-                # Renk belirle
                 color = Colors.GREEN if pl >= 0 else Colors.FAIL
                 icon = "🚀" if pl >= 0 else "🔻"
-                
-                print(f"\n{icon} Tek Varlık Performansı: {Colors.BOLD}{sym}{Colors.ENDC} | Getiri: {color}%{pl:.2f}{Colors.ENDC}")
-                print(Colors.WARNING + "   (Kıyaslama yapmak için portföye en az 2 hisse ekleyin)" + Colors.ENDC)
-            
-            # SENARYO B: Birden fazla hisse var (Normal Akış)
+                print(f"\n{icon} Tek Varlık: {Colors.BOLD}{sym}{Colors.ENDC} | Getiri: {color}%{pl:.2f}{Colors.ENDC}")
             else:
                 w_label = stats.get("worst_label", "Kaybettiren")
                 w_is_loss = stats.get("worst_is_loss", True)
                 w_color = Colors.FAIL if w_is_loss else Colors.WARNING
-                
                 print(f"\n🏆 Şampiyon: {Colors.GREEN}{stats['best_performer']}{Colors.ENDC} | 📉 {w_label}: {w_color}{stats['worst_performer']}{Colors.ENDC}")
-        
-        # 3. VARLIK DAĞILIMI
-        print(f"\n{Colors.CYAN}[VARLIK DAĞILIMI]{Colors.ENDC}")
-        for item in dashboard["allocation"]:
-            bar_len = int(item['weight'] / 5) # Basit bir bar grafiği
-            bar = "█" * bar_len
-            print(f" {item['symbol']:<6} : {bar} %{item['weight']:.1f} ({item['value']:,.2f} TL)")
 
-        # 4. DETAYLI LOT ANALİZİ (Parçalı Maliyet)
-        print(f"\n{Colors.CYAN}[PARÇALI MALİYET VE KAR/ZARAR ANALİZİ]{Colors.ENDC}")
-        print("-" * 70)
+        # 3. DETAYLI TABLO (GÜNCELLENDİ)
+        print("\n" + Colors.CYAN + "VARLIK DAĞILIMI" + Colors.ENDC)
+        # Sütun başlıklarını ve genişliklerini ayarlayalım
+        header = f"{'HİSSE':<8} {'ADET':<8} {'MALİYET':<10} {'FİYAT':<10} {'DEĞER (TL)':<14} {'KAR/ZARAR DURUMU'}"
+        print("-" * 85)
+        print(Colors.BOLD + header + Colors.ENDC)
+        print("-" * 85)
         
-        for lot in dashboard["lot_breakdown"]:
-            # Hisse Başlığı
-            pl_color = Colors.GREEN if lot['avg_pl_percent'] >= 0 else Colors.FAIL
-            print(f"{Colors.BOLD}{lot['symbol']}{Colors.ENDC} | Ort. Mal: {lot['avg_cost']:.2f} | Güncel: {lot['current_price']:.2f} | Genel P/L: {pl_color}%{lot['avg_pl_percent']:.2f}{Colors.ENDC}")
+        for p in positions:
+            # Kar/Zarar Renklendirme
+            pl_color = Colors.GREEN if p['nominal_pl'] >= 0 else Colors.FAIL
             
-            # İşlem Detayları
-            print(f"   {'TARİH':<12} {'ADET':<8} {'ALIŞ F.':<10} {'DURUM':<10} {'KAR/ZARAR'}")
-            for tx in lot["transactions"]:
-                tx_color = Colors.GREEN if tx['pl_percent'] >= 0 else Colors.FAIL
-                icon = "✅" if tx['pl_percent'] >= 0 else "🔻"
-                print(f"   {tx['date']:<12} {tx['quantity']:<8} {tx['buy_price']:<10.2f} {icon:<10} {tx_color}%{tx['pl_percent']:.2f}{Colors.ENDC}")
-            print("-" * 70)
-
+            # Format: %10.50 (+1,500.00 TL)
+            pl_str = f"%{p['pct_pl']:.2f} ({p['nominal_pl']:+,.2f} TL)"
+            
+            row = (
+                f"{p['symbol']:<8} "
+                f"{p['quantity']:<8.0f} " # Lot tam sayı görünür
+                f"{p['avg_cost']:<10.2f} "
+                f"{p['current_price']:<10.2f} "
+                f"{p['market_value']:<14,.2f} "
+                f"{pl_color}{pl_str}{Colors.ENDC}"
+            )
+            print(row)
+            
+        print("-" * 85)
         input("\nAna menüye dönmek için Enter...")
 
     def trade_flow(self, side="BUY"):
