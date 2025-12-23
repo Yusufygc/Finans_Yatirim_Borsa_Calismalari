@@ -218,43 +218,46 @@ class PortfolioAnalyticsService:
         return allocation
 
     def _calculate_extremes(self, holdings):
-        """En İyi ve En Kötü Performanslar (Tek hisse kontrolü eklendi)"""
+        """
+        En İyi ve En Kötü Performanslar (TL Kazancına Göre)
+        """
         if not holdings:
             return None
             
-        # --- YENİ KONTROL: TEK HİSSE VARSA ---
+        # 1. Tek hisse kontrolü
         if len(holdings) == 1:
             item = holdings[0]
-            pl_pct = ((item["current_price"] - item["avg_cost"]) / item["avg_cost"]) * 100
             return {
-                "is_single": True, # Bu bayrak (flag) UI'ı uyaracak
+                "is_single": True,
                 "symbol": item["symbol"],
-                "pl_pct": pl_pct
+                "pl_pct": item["pct_pl"],
+                "nominal_pl": item["nominal_pl"] # Menüde göstermek için ekledik
             }
-        # -------------------------------------
 
-        # Kar/Zarar Yüzdesine göre sırala (Çoklu hisse durumu)
-        sorted_holdings = sorted(holdings, key=lambda x: (x["current_price"] - x["avg_cost"]) / x["avg_cost"], reverse=True)
+        # --- DÜZELTME BURADA ---
+        # Eskiden: key=lambda x: x["pct_pl"] (Yüzdeye göreydi)
+        # Yeniden: key=lambda x: x["nominal_pl"] (Cebimize giren paraya göre)
         
-        best = sorted_holdings[0]
-        worst = sorted_holdings[-1]
+        sorted_holdings = sorted(holdings, key=lambda x: x["nominal_pl"], reverse=True)
         
-        # En kötü performansın yüzdesini hesapla
-        worst_pl_pct = ((worst["current_price"] - worst["avg_cost"]) / worst["avg_cost"]) * 100
+        best = sorted_holdings[0]  # En çok TL kazandıran
+        worst = sorted_holdings[-1] # En çok TL kaybettiren (veya en az kazandıran)
         
-        if worst_pl_pct >= 0:
-            worst_label = "En Az Getiri"
+        # Etiketleme Mantığı
+        if worst["nominal_pl"] >= 0:
+            worst_label = "En Az Getiri (TL)"
             is_loss = False
         else:
-            worst_label = "Kaybettiren"
+            worst_label = "En Çok Zarar (TL)"
             is_loss = True
             
+        # Ekranda görünecek formatı da güncelleyelim ki kafa karışıklığı olmasın
+        # Örn: ASELS (+10,000.00 TL)
         def format_stats(item):
-            pl_pct = ((item["current_price"] - item["avg_cost"]) / item["avg_cost"]) * 100
-            return f"{item['symbol']} (%{pl_pct:.2f})"
+            return f"{item['symbol']} ({item['nominal_pl']:+,.2f} TL)"
 
         return {
-            "is_single": False, # Çoklu hisse var
+            "is_single": False,
             "best_performer": format_stats(best),
             "worst_performer": format_stats(worst),
             "worst_label": worst_label,

@@ -24,6 +24,8 @@ class User(Base):
     budgets = relationship("Budget", back_populates="user")
     goals = relationship("FinancialGoal", back_populates="user")
     # ----------------------------------------------------
+    risk_score = Column(Integer, default=0)
+    risk_label = Column(String(20), default="Bilinmiyor") # "AGRESİF" gibi kısa metinler için 20 yeter
 
 # --- 2. HİSSE SENETLERİ ---
 class Security(Base):

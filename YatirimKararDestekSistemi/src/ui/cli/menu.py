@@ -2,8 +2,11 @@ import sys
 import os
 from time import sleep
 from datetime import datetime, time, date
-
+                
+import textwrap# Mesajı satırlara bölerek yazdır (uzun olabilir)
 from scipy import stats
+
+from src.data.models import User
 
 # Konsol Renkleri
 class Colors:
@@ -195,26 +198,32 @@ class ConsoleMenu:
         return None
     
     def print_mini_portfolio(self):
-        """İşlem ekranında özet bilgi."""
-        # Portföy verisini çek
-        report = self.analysis_service.calculate_portfolio_performance(self.user_id)
+        # DÜZELTME: Artık analysis_service yerine analytics_service (Portföy Servisi) kullanıyoruz.
+        # Eski Kod: report = self.analysis_service.calculate_portfolio_performance(self.user_id)
+        
+        report = self.analytics_service.generate_dashboard(self.user_id)
         
         print(Colors.CYAN + "\n--- GÜNCEL VARLIKLAR ---" + Colors.ENDC)
-        if not report["positions"]:
+        
+        # Hata veya boş portföy kontrolü
+        if "error" in report or not report.get("positions"): 
             print("Portföyünüz boş.")
-        else:
-            for pos in report["positions"]:
-                pl_color = Colors.GREEN if pos['pl'] >= 0 else Colors.FAIL
-                print(f"• {pos['symbol']:<6}: {pos['quantity']:<6} Adet | Mal: {pos['avg_cost']:<8.2f} | K/Z: {pl_color}{pos['pl']:<8.2f}{Colors.ENDC}")
+            return {} # Boş bir sözlük döndür ki trade_flow hata almasın
+            
+        positions = report["positions"]
+        
+        for pos in positions:
+            # Renklendirme (Nominal Kar/Zarar varsa onu kullan, yoksa pct_pl kullan)
+            # generate_dashboard artık 'nominal_pl' döndürüyor
+            p_val = pos.get('nominal_pl', 0)
+            pl_color = Colors.GREEN if p_val >= 0 else Colors.FAIL
+            
+            print(f"• {pos['symbol']:<6}: {pos['quantity']:<6} Adet | K/Z: {pl_color}{p_val:<8.2f} TL{Colors.ENDC}")
+            
         print("-" * 65 + "\n")
         
-        # --- KRİTİK DÜZELTME BURADA ---
-        # Portföydeki hisseleri ve adetlerini bir sözlük olarak döndür
-        # Örnek Çıktı: {'ASELS': 100.0, 'THYAO': 50.0}
-        owned_stocks = {pos['symbol']: float(pos['quantity']) for pos in report["positions"]}
-        return owned_stocks
-
-    # --- YENİLENEN PORTFÖY EKRANI ---
+        # Trade Flow için {Symbol: Adet} sözlüğü döndür
+        return {pos['symbol']: float(pos['quantity']) for pos in positions}
 
     def show_portfolio(self):
         self.show_header()
@@ -389,30 +398,69 @@ class ConsoleMenu:
 
     def ai_analysis_menu(self):
         self.show_header()
-        print(Colors.BLUE + ">> AI ANALİZ & TAHMİN" + Colors.ENDC)
-        print(Colors.WARNING + "(Çıkış için 'q')" + Colors.ENDC)
+        print(Colors.BLUE + ">> YAPAY ZEKA DESTEKLİ ANALİZ MERKEZİ" + Colors.ENDC)
+        self.print_mini_portfolio()
+        sym = self.get_input("Analiz edilecek hisse (Örn: ASELS): ")
+        
+        if sym:
+            # self.user_id'yi gönderiyoruz
+            res = self.analysis_service.run_prediction(sym.upper(), self.user_id)
+            
+            if "error" in res:
+                print(Colors.FAIL + f"\nHATA: {res['error']}" + Colors.ENDC)
+            else:
+                print("\n" + "="*50)
+                print(f"🤖 {Colors.CYAN}AI RAPORU: {res['symbol']}{Colors.ENDC}")
+                print("-" * 50)
+                print(f"📉 Mevcut Fiyat   : {res['current_price']:.2f} TL")
+                
+                # Hedef Fiyat ve Yüzdelik
+                chg_color = Colors.GREEN if res['change_pct'] > 0 else Colors.FAIL
+                print(f"🎯 {Colors.BOLD}Hedef Fiyat    : {res['predicted_price']:.2f} TL{Colors.ENDC} ({chg_color}%{res['change_pct']:.2f}{Colors.ENDC})")
+                
+                # Sinyal Rengi
+                sig_color = Colors.GREEN 
+                if "SAT" in res['signal']: sig_color = Colors.FAIL
+                elif "TUT" in res['signal']: sig_color = Colors.WARNING
+                
+                print(f"🚦 Sinyal         : {sig_color}{res['signal']}{Colors.ENDC}")
+                print(f"⚠️ Volatilite Risk: {res['volatility']:.2f}")
+                print("-" * 50)
+                
+                # --- GÜVENLİ RİSK DANIŞMANI KUTUSU ---
+                # Hata burada oluşuyordu, şimdi kontrol ekledik
+                risk_data = res.get('risk_analysis') # .get ile güvenli çekim
+                
+                if risk_data:
+                    # Renk kodunu Colors sınıfından dinamik al
+                    code_str = risk_data.get('color_code', 'ENDC')
+                    r_color = getattr(Colors, code_str, Colors.ENDC)
+                    message = risk_data.get('message', 'Risk verisi okunamadı.')
+                else:
+                    # Veri yoksa varsayılan değerler
+                    r_color = Colors.BLUE
+                    message = "Risk profili verisi bulunamadı. Lütfen anket doldurun."
 
-        symbol = self.get_input("Analiz edilecek hisse (Örn: THYAO): ")
-        if not symbol: return
-        symbol = symbol.upper()
+                # Artık r_color kesinlikle tanımlı, hata vermez
+                print("\n" + r_color + "┌" + "─"*50 + "┐")
+                print(f"│ 🛡️  KİŞİSEL RİSK DANIŞMANI")
+                print("├" + "─"*50 + "┤")
+                
+                import textwrap
+                for line in textwrap.wrap(message, width=48):
+                    print(f"│ {line:<48} │")
+                print("└" + "─"*50 + "┘" + Colors.ENDC)
+                # ---------------------------------------
 
-        self.market_service.update_price_history(symbol)
-        
-        print("\nAnaliz yapılıyor, modeller çalıştırılıyor...")
-        prediction = self.analysis_service.run_prediction(symbol)
-        
-        if prediction:
-            print(Colors.GREEN + "\n" + "*"*40)
-            print(f" TAHMİN RAPORU: {symbol}")
-            print("*"*40)
-            print(f"Hedef Fiyat   : {prediction.predicted_price:.2f} TL (T+1)")
-            print(f"Model Sinyali : {prediction.signal}")
-            print(f"Güven Skoru   : %{float(prediction.confidence_score)*100:.1f}")
-            print("*"*40 + Colors.ENDC)
-        else:
-            print(Colors.FAIL + "\nAnaliz başarısız oldu." + Colors.ENDC)
-        
-        input("\nDevam...")
+                print(f"\n{Colors.BOLD}🧠 Karar Sebepleri (XAI):{Colors.ENDC}")
+                if 'reasons' in res:
+                    for reason in res['reasons']:
+                        print(f"  • {reason}")
+                else:
+                    print("  • Detaylı açıklama bulunamadı.")
+                print("="*50)
+
+            input("\nDevam etmek için Enter...")
 
     def visualization_menu(self):
         self.show_header()
@@ -662,6 +710,55 @@ class ConsoleMenu:
                 print(f"{item['goal']:<15} {rem:<15,.0f} {item['months_left']:<5} {item['required_monthly']:<15,.0f} {st_color}{item['status']}{Colors.ENDC}")
                 
         input("\nDevam...")
+    
+    def risk_profile_survey(self):
+        self.show_header()
+        print(Colors.CYAN + ">> YATIRIMCI RİSK PROFİLİ ANALİZİ" + Colors.ENDC)
+        print("Sizi daha iyi tanımak için 3 kısa soru soracağız.\n")
+        
+        # Soru 1: Yaş
+        age = self.get_valid_number("1. Yaşınız kaç?: ", is_integer=True)
+        if not age: return
+
+        # Soru 2: Vade
+        print("\n2. Yatırımlarınızı genelde ne kadar süre tutarsınız?")
+        print("   a) Kısa Vade (< 1 Ay)")
+        print("   b) Orta Vade (1-12 Ay)")
+        print("   c) Uzun Vade (> 1 Yıl)")
+        horizon_choice = self.get_input("Seçiminiz (a/b/c): ")
+        horizon = "medium"
+        if horizon_choice == 'a': horizon = "short"
+        elif horizon_choice == 'c': horizon = "long"
+
+        # Soru 3: Psikoloji
+        print("\n3. Portföyünüz bir haftada %20 erirse ne yaparsınız?")
+        print("   a) Panik yapıp satarım (Korumacı)")
+        print("   b) Sakince beklerim (Sabırlı)")
+        print("   c) Fırsat bilip daha çok alırım (Cesur)")
+        react_choice = self.get_input("Seçiminiz (a/b/c): ")
+        reaction = "hold"
+        if react_choice == 'a': reaction = "sell"
+        elif react_choice == 'c': reaction = "buy_more"
+
+        # Hesaplama
+        from src.services.risk_manager import RiskManager
+        rm = RiskManager()
+        profile = rm.calculate_risk_profile({
+            'age': age, 'horizon': horizon, 'reaction': reaction
+        })
+        
+        # DB Kayıt
+        user = self.db.query(User).filter(User.id == self.user_id).first()
+        user.risk_score = profile['score']
+        user.risk_label = profile['label']
+        self.db.commit()
+        
+        print("\n" + "="*40)
+        print(f"🎯 RİSK SKORUNUZ: {profile['score']}")
+        print(f"🏷️  PROFİLİNİZ  : {Colors.BOLD}{profile['label']}{Colors.ENDC}")
+        print("="*40)
+        print("Artık AI analizleri size özel uyarılar verecek.")
+        input("Devam...")
 
     # --- ANA DÖNGÜ ---
     def main_loop(self):
@@ -674,8 +771,9 @@ class ConsoleMenu:
             print(Colors.BLUE + "5. Piyasa Verilerini Güncelle" + Colors.ENDC)
             print(Colors.PURPLE + "6. Görsel Raporlar" + Colors.ENDC)
             print(Colors.ORANGE + "7. Portföy Optimizasyonu" + Colors.ENDC)
-            print(Colors.GREEN + "8. Finansal Planlama (Bütçe & Hedefler)" + Colors.ENDC) 
-            print("9. Çıkış")
+            print(Colors.GREEN + "8. Finansal Planlama (Bütçe & Hedefler)" + Colors.ENDC)
+            print(Colors.WARNING + "9. Risk Profil Analizi (ANKET)" + Colors.ENDC) # Yeni
+            print("0. Çıkış")
             choice = input("\nSeçiminiz: ").strip()
             
             if choice == '1': self.show_portfolio()
@@ -689,6 +787,7 @@ class ConsoleMenu:
             elif choice == '6': self.visualization_menu()
             elif choice == '7': self.optimization_menu() 
             elif choice == '8': self.planning_menu() 
-            elif choice == '9':
+            elif choice == '9': self.risk_profile_survey()  
+            elif choice == '0':
                 print("Çıkış...")
                 break
